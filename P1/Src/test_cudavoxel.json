@@ -1,0 +1,14 @@
+[
+  {
+    "type": "readers.ply",
+    "filename": "/arquivos/ham/EXT4/PROJETO_LIGEM_HIBRIDO/04_Produtos_Finais/Densa_DS2.ply"
+  },
+  {
+    "type": "filters.cudavoxel",
+    "cell": 0.05
+  },
+  {
+    "type": "writers.ply",
+    "filename": "/arquivos/ham/EXT4/PROJETO_LIGEM_HIBRIDO/04_Produtos_Finais/Densa_DS2_voxel.ply"
+  }
+]

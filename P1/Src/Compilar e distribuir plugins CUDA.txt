@@ -1,0 +1,207 @@
+2) Build principal multi-GPU na máquina com CUDA 12.8
+
+Na máquina com P1000 + CUDA 12.8, use o código da árvore do projeto:
+
+conda activate ham_P1000
+cd /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal-cuda-plugin
+
+rm -rf build
+mkdir build
+cd build
+
+cmake .. \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+  -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++ \
+  -DCMAKE_CUDA_ARCHITECTURES="61;89;120"
+
+ninja -j"$(nproc)"
+
+Depois copie o .so para a pasta central de binários:
+
+mkdir -p /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+cp libpdal_plugin_filter_cudavoxel.so \
+  /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128/
+
+
+4) Distribuição da .so para cada máquina
+
+Em cada máquina, eu recomendo não copiar o plugin para dentro do conda.
+Melhor apontar o PDAL diretamente para a árvore do projeto.
+
+Plugin principal recomendado
+
+Use este caminho em todas:
+
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128/libpdal_plugin_filter_cudavoxel.so
+Variável de ambiente
+
+Em cada máquina:
+
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+
+Para persistir:
+
+echo 'export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128' >> ~/.bashrc
+source ~/.bashrc
+5) Validação em cada máquina
+5.1 P1000
+
+Na própria máquina de build:
+
+conda activate ham_P1000
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+
+pdal --drivers | grep -i cudavoxel
+ldd /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128/libpdal_plugin_filter_cudavoxel.so | grep -i cuda
+5.2 P620
+
+Na máquina com P620:
+
+conda activate <env_da_p620>
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+
+pdal --drivers | grep -i cudavoxel
+ldd /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128/libpdal_plugin_filter_cudavoxel.so | grep -i cuda
+5.3 L40S
+
+Primeiro teste a build multi-GPU do CUDA 12.8:
+
+conda activate ham_L40S
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+
+pdal --drivers | grep -i cudavoxel
+ldd /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128/libpdal_plugin_filter_cudavoxel.so | grep -i cuda
+
+Se houver incompatibilidade, volte para a build local da L40S:
+
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/l40s_cuda124
+5.4 5060 Ti
+
+Na máquina com 5060 Ti:
+
+conda activate <env_da_5060ti>
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+
+pdal --drivers | grep -i cudavoxel
+ldd /media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128/libpdal_plugin_filter_cudavoxel.so | grep -i cuda
+6) Teste funcional em cada máquina
+
+Em cada máquina, rode um pipeline mínimo:
+
+[
+  {
+    "type": "readers.ply",
+    "filename": "Densa_DS2.ply"
+  },
+  {
+    "type": "filters.cudavoxel",
+    "cell": 0.05
+  },
+  {
+    "type": "writers.ply",
+    "filename": "teste_saida.ply"
+  }
+]
+
+Execute:
+
+pdal pipeline test_cudavoxel.json
+
+E confira se:
+
+o pipeline roda
+
+o arquivo de saída é criado
+
+não há erro de plugin/runtime
+
+7) Script de validação padronizado
+
+Para qualquer máquina, você pode usar este bloco:
+
+echo "PDAL_DRIVER_PATH=$PDAL_DRIVER_PATH"
+which pdal
+pdal --version
+pdal --drivers | grep -i cudavoxel
+ldd "$PDAL_DRIVER_PATH/libpdal_plugin_filter_cudavoxel.so" | grep -i cuda
+8) Como decidir qual build usar
+Use multi_gpu_cuda128 quando:
+
+a máquina tiver driver/runtime compatível
+
+você quiser uma única build para P620, P1000, L40S e 5060 Ti
+
+Use l40s_cuda124 quando:
+
+quiser manter a L40S isolada no ambiente 12.4
+
+a build multi-GPU não ficar estável nessa máquina
+
+9) Recomendação de organização final
+
+Eu deixaria um arquivo de texto em:
+
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/README_plugins.txt
+
+com algo assim:
+
+multi_gpu_cuda128/
+  Plugin compilado com CUDA 12.8
+  Arquiteturas: 61;89;120
+  Destino: P620, P1000, L40S, 5060 Ti
+
+l40s_cuda124/
+  Plugin compilado com CUDA 12.4
+  Arquitetura: 89
+  Destino: L40S
+  
+  
+  Certo — nas duas máquinas o PDAL_DRIVER_PATH está apontando para o diretório de plugins dentro do ambiente conda:
+
+P1000: /home/ham/anaconda3/envs/ham_P1000/lib/pdal/plugins
+
+L40S: /home/hpc/anaconda3/envs/ham_L40S/lib/pdal/plugins
+
+Isso está funcionando, mas não segue o padrão que você quer para o projeto, que é manter os plugins em:
+
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src
+Para alinhar com a árvore do projeto
+
+Defina o PDAL_DRIVER_PATH para a pasta central dos plugins do projeto, por exemplo:
+
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128
+
+Depois teste:
+
+echo $PDAL_DRIVER_PATH
+ls $PDAL_DRIVER_PATH
+pdal --drivers | grep -i cudavoxel
+Para persistir no .bashrc
+Na P1000
+echo 'export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128' >> ~/.bashrc
+source ~/.bashrc
+Na L40S
+echo 'export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/multi_gpu_cuda128' >> ~/.bashrc
+source ~/.bashrc
+Se quiser usar a build específica da L40S
+
+Na L40S, se preferir a build local 89:
+
+export PDAL_DRIVER_PATH=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/l40s_cuda124
+Como confirmar que o PDAL está usando o caminho novo
+
+Rode:
+
+echo $PDAL_DRIVER_PATH
+pdal --drivers | grep -i cudavoxel
+ldd $PDAL_DRIVER_PATH/libpdal_plugin_filter_cudavoxel.so | grep -i cuda
+Resumo
+
+Hoje o plugin está sendo buscado no conda env.
+Para seguir o padrão do projeto, você deve apontar o PDAL_DRIVER_PATH para a pasta compartilhada em:
+
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal_plugins_bin/...
+
