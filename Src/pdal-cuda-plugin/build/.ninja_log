@@ -1,0 +1,5 @@
+# ninja log v5
+0	2720	1773089376469560905	CMakeFiles/pdal_plugin_filter_cudavoxel.dir/src/CudaVoxelFilter.cpp.o	bedf622409fa6cff
+1	32501	1773089406235563197	CMakeFiles/pdal_plugin_filter_cudavoxel.dir/cuda/voxel_kernel.cu.o	9002eef81e20f095
+32503	32937	1773089406684563232	CMakeFiles/pdal_plugin_filter_cudavoxel.dir/cmake_device_link.o	463729900e14b431
+32937	33023	1773089406771563239	libpdal_plugin_filter_cudavoxel.so	4cf46955dec8c638

@@ -1,0 +1,20 @@
+{
+    "pipeline": [
+        {
+            "type": "readers.ply",
+            "filename": "/arquivos/ham/EXT4/PROJETO_LIGEM_HIBRIDO/04_Produtos_Finais/Densa_DS2.ply"
+        },
+        {
+            "type": "filters.stats"
+        },
+        {
+            "type": "filters.cuda.approximatecoplanar",
+            "knn": 8
+        },
+        {
+            "type": "writers.ply",
+            "filename": "/arquivos/ham/EXT4/PROJETO_LIGEM_HIBRIDO/04_Produtos_Finais/Densa_S2_filtrado.ply",
+            "storage_mode": "ascii"
+        }
+    ]
+}

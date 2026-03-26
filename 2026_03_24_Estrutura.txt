@@ -1,0 +1,226 @@
+Vou separar por módulos + arquivos base + utilitários, já refletindo as versões finais que você foi ajustando (env snapshot, check env, sparse mapper robusto etc.).
+
+🧱 Estrutura final do pipeline (P1)
+03_Scripts_Common/P1000/
+│
+├── p1_config.sh
+├── p1_logging.sh
+│
+├── p1_00_env_snapshot.sh
+├── p1_env_snapshot.py
+│
+├── p1_00_check_env.sh
+├── p1_check_env.py
+│
+├── p1_01_feature_extraction.sh
+├── p1_02_exhaustive_matching.sh
+├── p1_03_sparse_mapper.sh
+├── p1_03_select_init_pair.py
+│
+├── p1_04_image_undistorter.sh
+├── p1_05_export_dense_robusto.sh
+├── p1_06_GPU_DEM.py
+├── p1_06_DEM.sh
+📦 1. Arquivos base (infraestrutura)
+🔹 p1_config.sh
+
+Responsável por:
+
+paths do projeto (PROJECT_ROOT)
+dataset (DATASET)
+GPU (GPU)
+controle de ambiente (PYTHON_BIN)
+flags de auto-install
+parâmetros do mapper (INIT_IMAGE_ID1/2)
+
+👉 Crítico para todo pipeline
+
+🔹 p1_logging.sh
+
+Contém:
+
+p1_module_start
+p1_module_end
+p1_run_cmd
+p1_metric
+
+👉 Responsável pelo:
+
+PIPELINE_LOG
+performance_p1_metrics.csv
+🔍 2. M00 – Ambiente
+🔹 p1_00_env_snapshot.sh
+
+Executa:
+
+python p1_env_snapshot.py
+
+Gera:
+
+env_history.csv
+
+✔ snapshot completo do ambiente
+
+🔹 p1_env_snapshot.py (versão final)
+
+✔ já corrigido com:
+
+pdal_cuda via filters.cuda
+sem dump de drivers
+CSV com ;
+validação de versões mínimas
+detecção CUDA ↔ driver ↔ torch
+fallback robusto para CUDA do PyTorch
+parser correto de COLMAP
+🔹 p1_00_check_env.sh
+
+Executa:
+
+p1_check_env.py
+
+✔ verifica dependências antes de rodar pipeline
+
+🔹 p1_check_env.py
+
+✔ versão com:
+
+auto-instalação opcional (pip)
+verificação de binários (colmap, pdal, gdal)
+fail early
+⚙️ 3. M01 – Feature Extraction
+🔹 p1_01_feature_extraction.sh
+
+✔ versão final inclui:
+
+detecção automática da flag:
+--SiftExtraction.max_image_size
+logs estruturados
+validação de saída (database.db)
+
+correção de erro:
+
+feature_extractor: comando não encontrado
+
+👉 usa:
+
+colmap feature_extractor
+🔗 4. M02 – Matching
+🔹 p1_02_exhaustive_matching.sh
+
+✔ padrão:
+
+colmap exhaustive_matcher
+
+✔ inclui:
+
+validação do DB
+logs
+🧠 5. M03 – Sparse Mapper (CRÍTICO)
+🔹 p1_03_sparse_mapper.sh (versão final robusta)
+
+✔ já inclui:
+
+🔹 Seleção manual ou automática:
+INIT_IMAGE_ID1
+INIT_IMAGE_ID2
+
+✔ prioridade:
+
+config manual
+script automático (p1_03_select_init_pair.py)
+🔹 Parâmetros robustos ativados:
+Mapper.min_num_matches
+Mapper.init_min_num_inliers
+Mapper.abs_pose_min_num_inliers
+Mapper.filter_max_reproj_error
+🔹 Fail early:
+registered_images < threshold → FAIL
+🔹 Logs corrigidos
+
+✔ sem mensagens inconsistentes
+✔ métricas reais (registered_images, reprojection_error)
+
+🔹 p1_03_select_init_pair.py
+
+✔ calcula melhor par baseado em:
+
+número de matches
+conectividade
+
+👉 resolve seu problema:
+
+par 44–45 falhava, 53–55 funcionava
+
+🧭 6. M04 – Undistortion
+🔹 p1_04_image_undistorter.sh
+
+✔ prepara:
+
+dense/
+dense/sparse/
+dense/stereo/
+
+✔ evita erro:
+
+patch-match.cfg not found
+🌍 7. M05 – Export georreferenciado
+🔹 p1_05_export_dense_robusto.sh
+
+✔ versão final com:
+
+ENU → ECEF → UTM automático
+EPSG automático (ex: 31983)
+preservação de cor
+LAS + PLY
+
+✔ resolve:
+
+erro de offset (~130m)
+erro de projeção no QGIS
+🗺️ 8. M06 – DEM
+🔹 p1_06_DEM.sh
+
+✔ executa pipeline PDAL
+
+🔹 p1_06_GPU_DEM.py
+
+✔ usa:
+
+laspy
+PDAL
+GDAL
+
+✔ gera:
+
+DTM
+DSM
+Hillshade
+CHM
+
+✔ já corrigido para:
+
+rodar no ambiente correto (não /usr/bin/python3)
+dependência laspy
+🔁 Ordem final de execução
+./p1_00_env_snapshot.sh
+./p1_00_check_env.sh
+
+./p1_01_feature_extraction.sh
+./p1_02_exhaustive_matching.sh
+./p1_03_sparse_mapper.sh
+
+./p1_04_image_undistorter.sh
+./p1_05_export_dense_robusto.sh
+
+./p1_06_DEM.sh
+🚀 Estado atual do pipeline
+
+Com tudo que você implementou:
+
+✔ robusto a ambientes diferentes (P620, P1000, 5060Ti, L40S)
+✔ auto-diagnóstico de CUDA
+✔ detecção de falhas cedo
+✔ georreferenciamento confiável
+✔ logs estruturados
+✔ métricas exportadas
+✔ seleção automática de par inicial

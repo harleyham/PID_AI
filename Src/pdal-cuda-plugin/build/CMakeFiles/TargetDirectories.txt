@@ -1,0 +1,3 @@
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal-cuda-plugin/build/CMakeFiles/pdal_plugin_filter_cudavoxel.dir
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal-cuda-plugin/build/CMakeFiles/edit_cache.dir
+/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/Src/pdal-cuda-plugin/build/CMakeFiles/rebuild_cache.dir
