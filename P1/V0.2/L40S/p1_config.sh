@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# Pipeline P1 - Configuração central
+# Pipeline V0.2 - Configuração central
 # ============================================================
 
 # Tipo de informação                Função correta
@@ -68,9 +68,9 @@ export IMAGES_DIR="$PROJECT_ROOT/00_Datasets/$DATASET/raw_images"
 
 export WORKSPACE="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/workspace_${DATASET_SLUG}/$GPU"
 export LOG_DIR="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/logs"
-export LOG_FILE="$LOG_DIR/performance_P1.csv"
-export PIPELINE_LOG="$LOG_DIR/pipeline_P1.log"
-export METRICS_CSV="$LOG_DIR/performance_P1_metrics.csv"
+export LOG_FILE="$LOG_DIR/performance_p1.csv"
+export PIPELINE_LOG="$LOG_DIR/pipeline_p1.log"
+export METRICS_CSV="$LOG_DIR/performance_p1_metrics.csv"
 
 export INIT_PAIR_AUTO_FILE="$WORKSPACE/init_pair_auto.sh"
 export INIT_PAIR_RANKING_CSV="$WORKSPACE/init_pair_ranking.csv"
@@ -136,7 +136,7 @@ p1_ensure_dirs() {
 
 p1_print_config() {
     cat <<EOF
-================ CONFIGURAÇÃO P1 ================
+================ CONFIGURAÇÃO V0.2 ================
 ALIGN_PATH          : $ALIGN_PATH
 ALIGNMENT_TYPE      : $ALIGNMENT_TYPE
 ALIGNMENT_MAX_ERROR : $ALIGNMENT_MAX_ERROR

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 06: Geração de DSM, DTM, hillshade e CHM
+# Pipeline V0.2 - Módulo 06: Geração de DSM, DTM, hillshade e CHM
 # Compatível com:
 # - p1_config.sh organizado por módulos M00..M06
 # - p1_logging.sh consolidado

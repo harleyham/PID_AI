@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pipeline P1 - Módulo 07: Ortomosaico
+# Pipeline V0.2 - Módulo 07: Ortomosaico
 # Gera o mosaico retificado utilizando o MDS e a nuvem densa.
 
 GPU="L40S"
@@ -10,7 +10,7 @@ WORKSPACE="$PROJECT_ROOT/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S"
 DENSE_PATH="$WORKSPACE/dense"
 DSM_TIF="$PROJECT_ROOT/04_Produtos_Finais/DS2/Produtos_Raster/DSM.tif"
 OUTPUT_DIR="$PROJECT_ROOT/04_Produtos_Finais/DS2/Produtos_Raster"
-LOG_FILE="$PROJECT_ROOT/02_Pipelines_LIGEM/P1_Tradicional/logs/performance_P1.csv"
+LOG_FILE="$PROJECT_ROOT/02_Pipelines_LIGEM/P1_Tradicional/logs/performance_p1.csv"
 
 # Configurações de saída
 ORTHO_NAME="Ortofoto_DS2.tif"
@@ -49,7 +49,7 @@ colmap image_mesher \
 end_time=$(date +%s)
 duration=$((end_time - start_time))
 
-echo "$DATASET,P1_M07_Ortho_$GPU,$duration,seconds,Success" >> "$LOG_FILE"
+echo "$DATASET,p1_M07_Ortho_$GPU,$duration,seconds,Success" >> "$LOG_FILE"
 echo "------------------------------------------------------"
 echo "Ortomosaico gerado em: $OUTPUT_DIR/$ORTHO_NAME"
 echo "Duração do Módulo: $duration segundos."

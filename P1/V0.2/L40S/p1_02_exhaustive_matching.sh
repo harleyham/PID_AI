@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 02: Exhaustive Matching + seleção automática do par inicial
+# Pipeline V0.2 - Módulo 02: Exhaustive Matching + seleção automática do par inicial
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/p1_config.sh"
