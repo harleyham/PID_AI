@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 01: Feature Extraction
+# Pipeline V0.2 - Módulo 01: Feature Extraction
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/p1_config.sh"
@@ -41,7 +41,7 @@ p1_metric "$MODULE" "coord_file" "$COORD_FILE" "path"
 # Execução com sintaxe para COLMAP 3.14.0.dev0
 # max_image_size altera o tamanho da foto. Depende da potência da CPU e GPU
 # 1400 ok na 5060Ti e L40S.
-# Out of memory na P1000. Tirar GPU e baixar max_size para 1000.
+# Out of memory na p2000. Tirar GPU e baixar max_size para 1000.
 
 p1_log_info "$MODULE" "Consultando help do COLMAP para detectar a flag de max_image_size"
 HELP_TEXT="$(colmap feature_extractor --help 2>&1)"
@@ -56,8 +56,8 @@ fi
 
 p1_log_info "$MODULE" "Flag detectada para max_image_size: $MAX_IMG_FLAG"
 p1_metric "$MODULE" "max_image_flag" "$MAX_IMG_FLAG" "flag"
-p1_metric "$MODULE" "max_image_size" "1000" "pixels"
-p1_metric "$MODULE" "max_num_features" "40000" "count"
+p1_metric "$MODULE" "max_image_size" "$Extraction_max_image_size" "pixels"
+p1_metric "$MODULE" "max_num_features" "$MAX_NUM_FEATURES" "count"
 
 p1_run_cmd "$MODULE" "colmap feature_extractor" \
     colmap feature_extractor \
@@ -65,8 +65,8 @@ p1_run_cmd "$MODULE" "colmap feature_extractor" \
     --image_path "$IMAGES_DIR" \
     --ImageReader.single_camera 1 \
     --FeatureExtraction.use_gpu 1 \
-    "$MAX_IMG_FLAG" 1000 \
-    --SiftExtraction.max_num_features 40000
+    "$MAX_IMG_FLAG" "$Extraction_max_image_size" \
+    --SiftExtraction.max_num_features "$MAX_NUM_FEATURES"
 
 p1_assert_file_exists "$MODULE" "$DATABASE"
 p1_assert_nonempty_file "$MODULE" "$DATABASE"

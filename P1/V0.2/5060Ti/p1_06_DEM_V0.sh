@@ -4,7 +4,7 @@ set -euo pipefail
 # Verificar depois:
 # Se quiser, posso te mostrar também um truque usado em fotogrametria para gerar hillshade muito mais bonito, que combina multidirectional hillshade + slope, muito usado em produtos de drone.
 
-# Pipeline P1 - Módulo 06: Geração de DSM, DTM, hillshade e CHM
+# Pipeline V0.2 - Módulo 06: Geração de DSM, DTM, hillshade e CHM
 # Versão corrigida para garantir mesma grade/extensão entre DSM e DTM
 
 
@@ -14,7 +14,7 @@ set -euo pipefail
 # PROJECT_ROOT="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO"
 # DENSE_LAS="$PROJECT_ROOT/04_Produtos_Finais/DS2/dense_utm_color.las"
 # OUTPUT_DIR="$PROJECT_ROOT/04_Produtos_Finais/DS2/Produtos_Raster"
-# LOG_FILE="$PROJECT_ROOT/02_Pipelines_LIGEM/P1_Tradicional/logs/performance_P1.csv"
+# LOG_FILE="$PROJECT_ROOT/02_Pipelines_LIGEM/P1_Tradicional/logs/performance_p1.csv"
 # WORKSPACE="$PROJECT_ROOT/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S"
 # ENU_META_JSON="$WORKSPACE/enu_origin.json"
 
@@ -330,7 +330,7 @@ end_time=$(date +%s)
 duration=$((end_time - start_time))
 
 if [ -f "$LOG_FILE" ]; then
-    echo "$DATASET;P1_M06_Rasters_$GPU;$duration;seconds;Success" >> "$LOG_FILE"
+    echo "$DATASET;p1_M06_Rasters_$GPU;$duration;seconds;Success" >> "$LOG_FILE"
 fi
 
 echo "------------------------------------------------------"

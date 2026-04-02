@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 04: Reconstrução Densa a partir do modelo ENU
+# Pipeline V0.2 - Módulo 04: Reconstrução Densa a partir do modelo ENU
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/p1_config.sh"
@@ -41,16 +41,16 @@ p1_metric "$MODULE" "output_ply" "$OUTPUT_PATH/fused_enu.ply" "path"
 p1_metric "$MODULE" "undistorter_output_type" "COLMAP" "mode"
 
 # Ajustes de patch match
-p1_metric "$MODULE" "patch_match_max_image_size" "2640" "pixels"
-p1_metric "$MODULE" "patch_match_window_step" "2" "pixels"
+p1_metric "$MODULE" "patch_match_max_image_size" "$PatchMatchStereo_max_image_size" "pixels"
+p1_metric "$MODULE" "patch_match_window_step" "$PatchMatchStereo_window_step" "pixels"
 p1_metric "$MODULE" "patch_match_geom_consistency" "false" "bool"
-p1_metric "$MODULE" "patch_match_num_iterations" "3" "count"
+p1_metric "$MODULE" "patch_match_num_iterations" "$PatchMatchStereo_num_iterations" "count"
 p1_metric "$MODULE" "patch_match_cache_size" "$RAM" "gb"
 
 # Ajustes de fusion
 p1_metric "$MODULE" "fusion_input_type" "photometric" "mode"
-p1_metric "$MODULE" "fusion_check_num_images" "3" "count"
-p1_metric "$MODULE" "fusion_min_num_pixels" "5" "count"
+p1_metric "$MODULE" "fusion_check_num_images" "$StereoFusion_check_num_images" "count"
+p1_metric "$MODULE" "fusion_min_num_pixels" "$StereoFusion_min_num_pixels" "count"
 
 p1_log_info "$MODULE" "Executando image_undistorter"
 p1_run_cmd "$MODULE" "colmap image_undistorter" colmap image_undistorter \
@@ -64,12 +64,12 @@ p1_run_cmd "$MODULE" "colmap patch_match_stereo" colmap patch_match_stereo \
     --workspace_path "$DENSE_PATH" \
     --workspace_format COLMAP \
     --PatchMatchStereo.gpu_index 0 \
-    --PatchMatchStereo.max_image_size 2600 \
-    --PatchMatchStereo.window_step 2 \
+    --PatchMatchStereo.max_image_size "$PatchMatchStereo_max_image_size" \
+    --PatchMatchStereo.window_step "$PatchMatchStereo_window_step" \
     --PatchMatchStereo.geom_consistency false \
-    --PatchMatchStereo.num_iterations 4 \
-    --PatchMatchStereo.window_radius 5 \
-    --PatchMatchStereo.num_samples 15 \
+    --PatchMatchStereo.num_iterations "$PatchMatchStereo_num_iterations" \
+    --PatchMatchStereo.window_radius "$PatchMatchStereo_window_radius" \
+    --PatchMatchStereo.num_samples "$PatchMatchStereo_num_samples" \
     --PatchMatchStereo.cache_size "$RAM"
 
 p1_log_info "$MODULE" "Executando stereo_fusion"
@@ -79,8 +79,8 @@ p1_run_cmd "$MODULE" "colmap stereo_fusion" colmap stereo_fusion \
     --input_type photometric \
     --output_path "$OUTPUT_PATH/fused_enu.ply" \
     --StereoFusion.num_threads 24 \
-    --StereoFusion.check_num_images 3 \
-    --StereoFusion.min_num_pixels 5
+    --StereoFusion.check_num_images "$StereoFusion_check_num_images" \
+    --StereoFusion.min_num_pixels "$StereoFusion_min_num_pixels"
 
 p1_assert_file_exists "$MODULE" "$OUTPUT_PATH/fused_enu.ply"
 p1_assert_nonempty_file "$MODULE" "$OUTPUT_PATH/fused_enu.ply"

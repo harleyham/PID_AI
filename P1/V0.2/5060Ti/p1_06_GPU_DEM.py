@@ -1,126 +1,145 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import argparse
 import json
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-import laspy
 import rasterio
 
-from p1_logging import log_info, log_warn, log_error, metric
+
+def now_str():
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def run_cmd(cmd, log_file, dataset, gpu, module, desc):
-    log_info(log_file, dataset, gpu, module, f"Executando: {desc}")
-    log_info(log_file, dataset, gpu, module, " ".join(cmd))
+def log_info(log_file, dataset, gpu, module, msg, echo=True):
+    line = f"[{now_str()}] [INFO] [{dataset}] [{gpu}] [{module}] {msg}"
+    if echo:
+        print(line, flush=True)
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
+
+def log_error(log_file, dataset, gpu, module, msg):
+    line = f"[{now_str()}] [ERROR] [{dataset}] [{gpu}] [{module}] {msg}"
+    print(line, flush=True)
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def metric(metrics_csv, dataset, gpu, module, metric_name, value, unit="", status="SUCCESS", notes=""):
+    with open(metrics_csv, "a", encoding="utf-8") as f:
+        f.write(f"{now_str()};{dataset};{gpu};{module};{metric_name};{value};{unit};{status};{notes}\n")
+
+
+def log_subprocess_tail(log_file, dataset, gpu, module, stdout_text, max_lines=20):
+    if not stdout_text:
+        return
+    lines = [line for line in stdout_text.splitlines() if line.strip()]
+    if not lines:
+        return
+    tail = lines[-max_lines:]
+    log_info(
+        log_file, dataset, gpu, module,
+        f"Resumo do subprocesso ({len(lines)} linhas; mostrando ultimas {len(tail)}):",
+        echo=False,
+    )
+    for line in tail:
+        log_info(log_file, dataset, gpu, module, line, echo=False)
+
+
+def run_cmd(cmd, log_file, dataset, gpu, module, label):
+    log_info(log_file, dataset, gpu, module, f"Executando: {label}")
+    log_info(log_file, dataset, gpu, module, " ".join(str(x) for x in cmd))
     proc = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        check=False,
+        check=False
     )
-
-    if proc.stdout:
-        for line in proc.stdout.splitlines():
-            log_info(log_file, dataset, gpu, module, line, echo=False)
-
     if proc.returncode != 0:
-        log_error(log_file, dataset, gpu, module, f"Falha em: {desc} (exit={proc.returncode})")
-        raise RuntimeError(f"Comando falhou: {' '.join(cmd)}")
-
-    return proc.stdout
-
-
-def detect_epsg(dense_las: Path, enu_meta_json: Path):
-    # Fonte primária: CRS embutido no LAS
-    try:
-        with laspy.open(dense_las) as reader:
-            crs = reader.header.parse_crs()
-            if crs is not None:
-                epsg = crs.to_epsg()
-                if epsg is not None:
-                    return int(epsg), "LAS"
-    except Exception:
-        pass
-
-    # Fallback: enu_origin.json
-    try:
-        if enu_meta_json.exists():
-            meta = json.loads(enu_meta_json.read_text(encoding="utf-8"))
-            epsg = meta.get("epsg")
-            if epsg is not None:
-                return int(epsg), "ENU_META_JSON"
-    except Exception:
-        pass
-
-    raise RuntimeError("Não foi possível determinar o EPSG a partir do LAS nem do enu_origin.json")
+        log_error(log_file, dataset, gpu, module, f"Falha em: {label} (exit_code={proc.returncode})")
+        log_subprocess_tail(log_file, dataset, gpu, module, proc.stdout)
+        return False
+    log_info(log_file, dataset, gpu, module, f"{label} concluido com sucesso", echo=False)
+    return True
 
 
-def las_bounds(dense_las: Path):
-    with laspy.open(dense_las) as reader:
-        mins = reader.header.mins
-        maxs = reader.header.maxs
-        return (
-            float(mins[0]), float(maxs[0]),
-            float(mins[1]), float(maxs[1]),
-            float(mins[2]), float(maxs[2]),
-        )
+def read_json(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def raster_stats(path: Path):
+def pdal_summary(path):
+    proc = subprocess.run(
+        ["pdal", "info", str(path), "--summary"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stdout)
+    return json.loads(proc.stdout)
+
+
+def raster_stats(path):
     with rasterio.open(path) as ds:
-        arr = ds.read(1, masked=True)
-        nodata = ds.nodata
-        if arr.count() == 0:
-            return {
-                "width": ds.width,
-                "height": ds.height,
-                "nodata": nodata,
-                "min": None,
-                "max": None,
-                "crs": ds.crs.to_string() if ds.crs else None,
-                "res_x": ds.res[0],
-                "res_y": ds.res[1],
-            }
+        band = ds.read(1, masked=True)
+        if band.count() == 0:
+            min_val = None
+            max_val = None
+        else:
+            min_val = float(band.min())
+            max_val = float(band.max())
 
+        crs_str = ds.crs.to_string() if ds.crs else None
+        res_x, res_y = ds.res
         return {
+            "crs": crs_str,
             "width": ds.width,
             "height": ds.height,
-            "nodata": nodata,
-            "min": float(arr.min()),
-            "max": float(arr.max()),
-            "crs": ds.crs.to_string() if ds.crs else None,
-            "res_x": ds.res[0],
-            "res_y": ds.res[1],
+            "res_x": float(res_x),
+            "res_y": float(abs(res_y)),
+            "min": min_val,
+            "max": max_val,
         }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Gera DSM, DTM, hillshade e CHM a partir de dense_utm_color.las"
-    )
-    parser.add_argument("--dense-las", required=True, help="Arquivo LAS de entrada")
-    parser.add_argument("--output-dir", required=True, help="Diretório de saída")
-    parser.add_argument("--enu-meta-json", required=True, help="Arquivo enu_origin.json")
-    parser.add_argument("--log-file", required=False, help="Arquivo de log textual")
-    parser.add_argument("--metrics-csv", required=False, help="CSV de métricas")
-    parser.add_argument("--dataset", required=True, help="Nome do dataset")
-    parser.add_argument("--gpu", required=True, help="GPU usada no processamento")
-    parser.add_argument("--module", required=True, help="Nome do módulo")
-
-    parser.add_argument("--resolution", type=float, default=0.50, help="Resolução do raster em metros")
-    parser.add_argument("--nodata", type=float, default=-9999.0, help="Valor NoData")
+def main():
+    parser = argparse.ArgumentParser(description="Pipeline P1 - M06 DEM/DSM/CHM")
+    parser.add_argument("--dense-las", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--enu-meta-json", required=True)
+    parser.add_argument("--resolution", type=float, default=0.05)
+    parser.add_argument("--nodata", type=float, default=-9999.0)
     parser.add_argument("--smrf-scalar", type=float, default=1.25)
     parser.add_argument("--smrf-slope", type=float, default=0.15)
     parser.add_argument("--smrf-threshold", type=float, default=0.50)
     parser.add_argument("--smrf-window", type=float, default=16.0)
+    parser.add_argument("--dtm-output-type", default="idw")
+    parser.add_argument("--dtm-window-size", type=int, default=1)
+    parser.add_argument("--dsm-output-type", default="max")
+    parser.add_argument("--dsm-window-size", type=int, default=1)
+    parser.add_argument("--fillnodata-max-distance", type=int, default=20)
+    parser.add_argument("--fillnodata-smoothing-iterations", type=int, default=1)
+
+    parser.add_argument("--log-file", required=True)
+    parser.add_argument("--metrics-csv", required=True)
+    parser.add_argument("--dataset", required=True)
+    parser.add_argument("--gpu", required=True)
+    parser.add_argument("--module", required=True)
 
     args = parser.parse_args()
+
+    dense_las = Path(args.dense_las)
+    output_dir = Path(args.output_dir)
+    enu_meta_json = Path(args.enu_meta_json)
 
     log_file = args.log_file
     metrics_csv = args.metrics_csv
@@ -128,44 +147,45 @@ def main() -> int:
     gpu = args.gpu
     module = args.module
 
-    dense_las = Path(args.dense_las)
-    output_dir = Path(args.output_dir)
-    enu_meta_json = Path(args.enu_meta_json)
-
-    if not dense_las.exists():
-        log_error(log_file, dataset, gpu, module, f"LAS não encontrado: {dense_las}")
-        metric(metrics_csv, dataset, gpu, module, "dense_las_exists", 0, "bool", "FAILED", str(dense_las))
-        return 1
-
-    if not enu_meta_json.exists():
-        log_error(log_file, dataset, gpu, module, f"enu_origin.json não encontrado: {enu_meta_json}")
-        metric(metrics_csv, dataset, gpu, module, "enu_meta_exists", 0, "bool", "FAILED", str(enu_meta_json))
-        return 2
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    ground_laz = output_dir / "dense_ground.laz"
     dtm_tif = output_dir / "DTM.tif"
     dsm_tif = output_dir / "DSM.tif"
+    dtm_closed_tif = output_dir / "DTM_closed.tif"
+    dsm_closed_tif = output_dir / "DSM_closed.tif"
     chm_tif = output_dir / "CHM.tif"
     dtm_hs = output_dir / "DTM_hillshade.tif"
     dsm_hs = output_dir / "DSM_hillshade.tif"
+    ground_laz = output_dir / "dense_ground.laz"
 
-    epsg_code, epsg_source = detect_epsg(dense_las, enu_meta_json)
-    srs = f"EPSG:{epsg_code}"
+    if not dense_las.exists():
+        log_error(log_file, dataset, gpu, module, f"LAS não encontrada: {dense_las}")
+        return 2
+    if not enu_meta_json.exists():
+        log_error(log_file, dataset, gpu, module, f"ENU meta não encontrado: {enu_meta_json}")
+        return 2
 
-    minx, maxx, miny, maxy, minz, maxz = las_bounds(dense_las)
+    meta = read_json(enu_meta_json)
+    epsg = int(meta["epsg"])
+    srs = f"EPSG:{epsg}"
+
+    summary = pdal_summary(dense_las)
+    bounds = summary["summary"]["bounds"]
+    minx = bounds["minx"]
+    maxx = bounds["maxx"]
+    miny = bounds["miny"]
+    maxy = bounds["maxy"]
+    minz = bounds["minz"]
+    maxz = bounds["maxz"]
+
     pdal_bounds = f"([{minx},{maxx}],[{miny},{maxy}])"
 
-    log_info(log_file, dataset, gpu, module, f"SRS detectado: {srs} (origem: {epsg_source})")
+    log_info(log_file, dataset, gpu, module, f"SRS detectado: {srs} (origem: ENU meta)")
     log_info(log_file, dataset, gpu, module, f"Bounds LAS X: {minx} -> {maxx}")
     log_info(log_file, dataset, gpu, module, f"Bounds LAS Y: {miny} -> {maxy}")
     log_info(log_file, dataset, gpu, module, f"Bounds LAS Z: {minz} -> {maxz}")
 
-    metric(metrics_csv, dataset, gpu, module, "epsg", epsg_code, "code")
-    metric(metrics_csv, dataset, gpu, module, "epsg_source", epsg_source, "source")
-    metric(metrics_csv, dataset, gpu, module, "resolution", args.resolution, "m")
-    metric(metrics_csv, dataset, gpu, module, "nodata", args.nodata, "value")
+    metric(metrics_csv, dataset, gpu, module, "epsg", epsg, "code")
     metric(metrics_csv, dataset, gpu, module, "las_minx", minx, "m")
     metric(metrics_csv, dataset, gpu, module, "las_maxx", maxx, "m")
     metric(metrics_csv, dataset, gpu, module, "las_miny", miny, "m")
@@ -206,8 +226,8 @@ def main() -> int:
                 }
             ]
         }
+
         log_info(log_file, dataset, gpu, module, "Executando: PDAL SMRF + exportação ground LAZ")
-        log_info(log_file, dataset, gpu, module, "pdal pipeline --stdin")
         proc = subprocess.run(
             ["pdal", "pipeline", "--stdin"],
             input=json.dumps(ground_pipeline),
@@ -216,12 +236,11 @@ def main() -> int:
             text=True,
             check=False,
         )
-        if proc.stdout:
-            for line in proc.stdout.splitlines():
-                log_info(log_file, dataset, gpu, module, line, echo=False)
         if proc.returncode != 0:
             log_error(log_file, dataset, gpu, module, "Falha no pipeline PDAL de classificação de solo")
+            log_subprocess_tail(log_file, dataset, gpu, module, proc.stdout)
             return 3
+        log_info(log_file, dataset, gpu, module, "PDAL SMRF + exportação ground LAZ concluido", echo=False)
 
         # 2) DTM
         dtm_pipeline = {
@@ -235,10 +254,10 @@ def main() -> int:
                     "filename": str(dtm_raw),
                     "resolution": args.resolution,
                     "bounds": pdal_bounds,
-                    "output_type": "idw",
+                    "output_type": args.dtm_output_type,
                     "data_type": "float32",
                     "nodata": args.nodata,
-                    "window_size": 4,
+                    "window_size": args.dtm_window_size,
                     "gdaldriver": "GTiff",
                     "override_srs": srs,
                 }
@@ -253,12 +272,11 @@ def main() -> int:
             text=True,
             check=False,
         )
-        if proc.stdout:
-            for line in proc.stdout.splitlines():
-                log_info(log_file, dataset, gpu, module, line, echo=False)
         if proc.returncode != 0:
             log_error(log_file, dataset, gpu, module, "Falha no pipeline PDAL do DTM")
+            log_subprocess_tail(log_file, dataset, gpu, module, proc.stdout)
             return 4
+        log_info(log_file, dataset, gpu, module, "Pipeline PDAL do DTM concluido", echo=False)
 
         # 3) DSM
         dsm_pipeline = {
@@ -272,10 +290,10 @@ def main() -> int:
                     "filename": str(dsm_raw),
                     "resolution": args.resolution,
                     "bounds": pdal_bounds,
-                    "output_type": "max",
+                    "output_type": args.dsm_output_type,
                     "data_type": "float32",
                     "nodata": args.nodata,
-                    "window_size": 0,
+                    "window_size": args.dsm_window_size,
                     "gdaldriver": "GTiff",
                     "override_srs": srs,
                 }
@@ -290,15 +308,14 @@ def main() -> int:
             text=True,
             check=False,
         )
-        if proc.stdout:
-            for line in proc.stdout.splitlines():
-                log_info(log_file, dataset, gpu, module, line, echo=False)
         if proc.returncode != 0:
             log_error(log_file, dataset, gpu, module, "Falha no pipeline PDAL do DSM")
+            log_subprocess_tail(log_file, dataset, gpu, module, proc.stdout)
             return 5
+        log_info(log_file, dataset, gpu, module, "Pipeline PDAL do DSM concluido", echo=False)
 
         # 4) Compressão/tiling
-        run_cmd(
+        if not run_cmd(
             [
                 "gdal_translate", str(dtm_raw), str(dtm_tif),
                 "-co", "TILED=YES",
@@ -307,9 +324,10 @@ def main() -> int:
                 "-co", "BIGTIFF=IF_SAFER",
             ],
             log_file, dataset, gpu, module, "gdal_translate DTM"
-        )
+        ):
+            return 6
 
-        run_cmd(
+        if not run_cmd(
             [
                 "gdal_translate", str(dsm_raw), str(dsm_tif),
                 "-co", "TILED=YES",
@@ -318,27 +336,55 @@ def main() -> int:
                 "-co", "BIGTIFF=IF_SAFER",
             ],
             log_file, dataset, gpu, module, "gdal_translate DSM"
-        )
+        ):
+            return 6
+
+        # 4b) Fechamento controlado de buracos para o M07
+        if not run_cmd(
+            [
+                "gdal_fillnodata.py",
+                "-md", str(args.fillnodata_max_distance),
+                "-si", str(args.fillnodata_smoothing_iterations),
+                str(dtm_tif),
+                str(dtm_closed_tif),
+            ],
+            log_file, dataset, gpu, module, "gdal_fillnodata DTM_closed"
+        ):
+            return 6
+
+        if not run_cmd(
+            [
+                "gdal_fillnodata.py",
+                "-md", str(args.fillnodata_max_distance),
+                "-si", str(args.fillnodata_smoothing_iterations),
+                str(dsm_tif),
+                str(dsm_closed_tif),
+            ],
+            log_file, dataset, gpu, module, "gdal_fillnodata DSM_closed"
+        ):
+            return 6
 
         # 5) Hillshade
-        run_cmd(
+        if not run_cmd(
             [
                 "gdaldem", "hillshade", str(dtm_tif), str(dtm_hs),
                 "-multidirectional", "-compute_edges", "-of", "GTiff"
             ],
             log_file, dataset, gpu, module, "gdaldem hillshade DTM"
-        )
+        ):
+            return 6
 
-        run_cmd(
+        if not run_cmd(
             [
                 "gdaldem", "hillshade", str(dsm_tif), str(dsm_hs),
                 "-multidirectional", "-compute_edges", "-of", "GTiff"
             ],
             log_file, dataset, gpu, module, "gdaldem hillshade DSM"
-        )
+        ):
+            return 6
 
-        # 6) CHM
-        run_cmd(
+        # 6) CHM (mantido sobre os rasters originais)
+        if not run_cmd(
             [
                 "gdal_calc.py",
                 "-A", str(dsm_tif),
@@ -355,18 +401,21 @@ def main() -> int:
                 "--quiet",
             ],
             log_file, dataset, gpu, module, "gdal_calc CHM"
-        )
+        ):
+            return 6
 
     # Estatísticas dos rasters
     for raster_path, prefix in [
         (dtm_tif, "dtm"),
         (dsm_tif, "dsm"),
+        (dtm_closed_tif, "dtm_closed"),
+        (dsm_closed_tif, "dsm_closed"),
         (chm_tif, "chm"),
     ]:
         if not raster_path.exists():
             log_error(log_file, dataset, gpu, module, f"Raster não encontrado: {raster_path}")
             metric(metrics_csv, dataset, gpu, module, f"{prefix}_exists", 0, "bool", "FAILED", str(raster_path))
-            return 6
+            return 7
 
         stats = raster_stats(raster_path)
 
@@ -389,6 +438,8 @@ def main() -> int:
     log_info(log_file, dataset, gpu, module, f"Ground LAZ: {ground_laz}")
     log_info(log_file, dataset, gpu, module, f"DTM: {dtm_tif}")
     log_info(log_file, dataset, gpu, module, f"DSM: {dsm_tif}")
+    log_info(log_file, dataset, gpu, module, f"DTM Closed: {dtm_closed_tif}")
+    log_info(log_file, dataset, gpu, module, f"DSM Closed: {dsm_closed_tif}")
     log_info(log_file, dataset, gpu, module, f"CHM: {chm_tif}")
     log_info(log_file, dataset, gpu, module, f"DTM Hillshade: {dtm_hs}")
     log_info(log_file, dataset, gpu, module, f"DSM Hillshade: {dsm_hs}")
@@ -396,6 +447,8 @@ def main() -> int:
     metric(metrics_csv, dataset, gpu, module, "ground_laz_exists", int(ground_laz.exists()), "bool")
     metric(metrics_csv, dataset, gpu, module, "dtm_exists", int(dtm_tif.exists()), "bool")
     metric(metrics_csv, dataset, gpu, module, "dsm_exists", int(dsm_tif.exists()), "bool")
+    metric(metrics_csv, dataset, gpu, module, "dtm_closed_exists", int(dtm_closed_tif.exists()), "bool")
+    metric(metrics_csv, dataset, gpu, module, "dsm_closed_exists", int(dsm_closed_tif.exists()), "bool")
     metric(metrics_csv, dataset, gpu, module, "chm_exists", int(chm_tif.exists()), "bool")
     metric(metrics_csv, dataset, gpu, module, "dtm_hillshade_exists", int(dtm_hs.exists()), "bool")
     metric(metrics_csv, dataset, gpu, module, "dsm_hillshade_exists", int(dsm_hs.exists()), "bool")

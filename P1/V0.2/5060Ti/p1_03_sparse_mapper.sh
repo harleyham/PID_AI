@@ -1,16 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 03: Sparse Mapper + alinhamento ENU
-# Padrão consolidado:
-# - preserva o modelo local em sparse/0
-# - gera modelo alinhado separado em enu/
-# - grava enu_origin.json com a origem real do ENU
-# - exporta Esparsa_ENU.ply
-# - registra métricas em METRICS_CSV e mensagens em PIPELINE_LOG
-# - consome par inicial automático gerado no M02
-# - permite override manual via p1_config.sh
-# - falha cedo se o modelo local sair fraco
+# Pipeline V0.2 - Módulo 03: Sparse Mapper + alinhamento ENU
+# Versão com fallback automático de pares iniciais
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/p1_config.sh"
@@ -67,6 +59,7 @@ p1_metric "$MODULE" "enu_meta_json" "$ENU_META_JSON" "path"
 : "${MAPPER_FILTER_MAX_REPROJ_ERROR:=3}"
 : "${ALIGNMENT_MAX_ERROR:=10}"
 : "${ALIGNMENT_TYPE:=enu}"
+: "${MAPPER_NUM_THREADS:=24}"
 
 p1_metric "$MODULE" "init_pair_auto_file" "$INIT_PAIR_AUTO_FILE" "path"
 p1_metric "$MODULE" "mapper_ba_use_gpu" "1" "bool"
@@ -81,68 +74,240 @@ p1_metric "$MODULE" "mapper_filter_max_reproj_error" "$MAPPER_FILTER_MAX_REPROJ_
 p1_metric "$MODULE" "min_registered_images_local" "$MIN_REGISTERED_IMAGES_LOCAL" "count"
 p1_metric "$MODULE" "alignment_max_error" "$ALIGNMENT_MAX_ERROR" "meters"
 p1_metric "$MODULE" "alignment_type" "$ALIGNMENT_TYPE" "mode"
+p1_metric "$MODULE" "mapper_num_threads" "$MAPPER_NUM_THREADS" "count"
 
 AUTO_ID1=""
 AUTO_ID2=""
+AUTO_NAME1=""
+AUTO_NAME2=""
+AUTO_SCORE=""
+FALLBACK_COUNT="0"
+
+declare -a CANDIDATE_ID1S=()
+declare -a CANDIDATE_ID2S=()
+declare -a CANDIDATE_NAME1S=()
+declare -a CANDIDATE_NAME2S=()
+declare -a CANDIDATE_SCORES=()
 
 if [[ -f "$INIT_PAIR_AUTO_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$INIT_PAIR_AUTO_FILE"
+
     AUTO_ID1="${INIT_IMAGE_ID1_AUTO:-}"
     AUTO_ID2="${INIT_IMAGE_ID2_AUTO:-}"
+    AUTO_NAME1="${INIT_IMAGE_NAME1_AUTO:-}"
+    AUTO_NAME2="${INIT_IMAGE_NAME2_AUTO:-}"
+    AUTO_SCORE="${INIT_PAIR_SCORE_AUTO:-}"
+    FALLBACK_COUNT="${INIT_PAIR_FALLBACK_COUNT:-0}"
+
     p1_log_info "$MODULE" "Par automático carregado do M02: ${AUTO_ID1:-vazio} / ${AUTO_ID2:-vazio}"
     [[ -n "$AUTO_ID1" ]] && p1_metric "$MODULE" "mapper_init_image_id1_auto" "$AUTO_ID1" "id"
     [[ -n "$AUTO_ID2" ]] && p1_metric "$MODULE" "mapper_init_image_id2_auto" "$AUTO_ID2" "id"
+    [[ -n "$AUTO_SCORE" ]] && p1_metric "$MODULE" "mapper_init_pair_score_auto" "$AUTO_SCORE" "score"
+    p1_metric "$MODULE" "mapper_init_fallback_count" "$FALLBACK_COUNT" "count"
+
+    if [[ "$FALLBACK_COUNT" =~ ^[0-9]+$ ]] && (( FALLBACK_COUNT > 0 )); then
+        for ((i=1; i<=FALLBACK_COUNT; i++)); do
+            id1_var="INIT_PAIR_CANDIDATE_${i}_IMAGE_ID1"
+            id2_var="INIT_PAIR_CANDIDATE_${i}_IMAGE_ID2"
+            name1_var="INIT_PAIR_CANDIDATE_${i}_IMAGE_NAME1"
+            name2_var="INIT_PAIR_CANDIDATE_${i}_IMAGE_NAME2"
+            score_var="INIT_PAIR_CANDIDATE_${i}_SCORE"
+
+            id1="${!id1_var:-}"
+            id2="${!id2_var:-}"
+            name1="${!name1_var:-}"
+            name2="${!name2_var:-}"
+            score="${!score_var:-}"
+
+            if [[ -n "$id1" && -n "$id2" ]]; then
+                CANDIDATE_ID1S+=("$id1")
+                CANDIDATE_ID2S+=("$id2")
+                CANDIDATE_NAME1S+=("$name1")
+                CANDIDATE_NAME2S+=("$name2")
+                CANDIDATE_SCORES+=("$score")
+            fi
+        done
+    fi
 else
     p1_log_warn "$MODULE" "Arquivo de par automático não encontrado: $INIT_PAIR_AUTO_FILE"
     p1_metric "$MODULE" "init_pair_auto_file_exists" "0" "bool" "WARNING" "$INIT_PAIR_AUTO_FILE"
 fi
 
-FINAL_INIT_ID1=""
-FINAL_INIT_ID2=""
-INIT_SOURCE="none"
-
+# Override manual tem prioridade máxima
 if [[ -n "$INIT_IMAGE_ID1" && -n "$INIT_IMAGE_ID2" ]]; then
-    FINAL_INIT_ID1="$INIT_IMAGE_ID1"
-    FINAL_INIT_ID2="$INIT_IMAGE_ID2"
-    INIT_SOURCE="manual_config"
-elif [[ -n "$AUTO_ID1" && -n "$AUTO_ID2" ]]; then
-    FINAL_INIT_ID1="$AUTO_ID1"
-    FINAL_INIT_ID2="$AUTO_ID2"
-    INIT_SOURCE="auto_m02"
+    p1_log_info "$MODULE" "Override manual detectado no p1_config.sh: $INIT_IMAGE_ID1 / $INIT_IMAGE_ID2"
+    CANDIDATE_ID1S=("$INIT_IMAGE_ID1")
+    CANDIDATE_ID2S=("$INIT_IMAGE_ID2")
+    CANDIDATE_NAME1S=("manual_config")
+    CANDIDATE_NAME2S=("manual_config")
+    CANDIDATE_SCORES=("manual")
 fi
 
-MAPPER_INIT_ARGS=()
-if [[ -n "$FINAL_INIT_ID1" && -n "$FINAL_INIT_ID2" ]]; then
-    MAPPER_INIT_ARGS=(
-        --Mapper.init_image_id1 "$FINAL_INIT_ID1"
-        --Mapper.init_image_id2 "$FINAL_INIT_ID2"
-    )
-    p1_log_info "$MODULE" "Usando par inicial: $FINAL_INIT_ID1 / $FINAL_INIT_ID2 (fonte=$INIT_SOURCE)"
-    p1_metric "$MODULE" "mapper_init_source" "$INIT_SOURCE" "mode"
-    p1_metric "$MODULE" "mapper_init_image_id1" "$FINAL_INIT_ID1" "id"
-    p1_metric "$MODULE" "mapper_init_image_id2" "$FINAL_INIT_ID2" "id"
-else
-    p1_log_warn "$MODULE" "Nenhum par inicial definido; COLMAP escolherá automaticamente"
-    p1_metric "$MODULE" "mapper_init_source" "colmap_auto" "mode" "WARNING"
+attempt_mapper_with_pair() {
+    local pair_id1="$1"
+    local pair_id2="$2"
+    local pair_label="$3"
+
+    rm -rf "$SPARSE_PATH"/*
+    mkdir -p "$SPARSE_PATH"
+
+    p1_log_info "$MODULE" "Tentando COLMAP mapper com par inicial: $pair_id1 / $pair_id2 [$pair_label]"
+
+    if colmap mapper \
+        --database_path "$DATABASE" \
+        --image_path "$IMAGES_DIR" \
+        --output_path "$SPARSE_PATH" \
+        --Mapper.ba_use_gpu 1 \
+        --Mapper.multiple_models 0 \
+        --Mapper.min_num_matches "$MAPPER_MIN_NUM_MATCHES" \
+        --Mapper.ba_global_max_num_iterations "$MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS" \
+        --Mapper.extract_colors 1 \
+        --Mapper.init_min_num_inliers "$MAPPER_INIT_MIN_NUM_INLIERS" \
+        --Mapper.abs_pose_min_num_inliers "$MAPPER_ABS_POSE_MIN_NUM_INLIERS" \
+        --Mapper.abs_pose_min_inlier_ratio "$MAPPER_ABS_POSE_MIN_INLIER_RATIO" \
+        --Mapper.filter_max_reproj_error "$MAPPER_FILTER_MAX_REPROJ_ERROR" \
+        --Mapper.num_threads "$MAPPER_NUM_THREADS" \
+        --Mapper.init_image_id1 "$pair_id1" \
+        --Mapper.init_image_id2 "$pair_id2"
+    then
+        if [[ -d "$SPARSE_RUN" ]] && [[ -f "$SPARSE_RUN/cameras.bin" || -f "$SPARSE_RUN/cameras.txt" ]]; then
+            p1_log_info "$MODULE" "Mapper concluiu com sucesso usando par: $pair_id1 / $pair_id2 [$pair_label]"
+            return 0
+        fi
+
+        p1_log_warn "$MODULE" "Mapper retornou sucesso, mas não gerou modelo válido em $SPARSE_RUN [$pair_label]"
+        return 1
+    else
+        p1_log_warn "$MODULE" "Mapper falhou com par: $pair_id1 / $pair_id2 [$pair_label]"
+        return 1
+    fi
+}
+
+validate_sparse_attempt() {
+    local attempt_label="$1"
+    local sparse_stats=""
+    local registered_local=""
+
+    sparse_stats="$(colmap model_analyzer --path "$SPARSE_RUN" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
+    if [[ -z "$sparse_stats" ]]; then
+        p1_log_warn "$MODULE" "Nao foi possivel extrair estatisticas do modelo esparso [$attempt_label]"
+        return 1
+    fi
+
+    registered_local="$(grep -E "Registered images:" <<<"$sparse_stats" | awk -F': ' '{print $2}' | tr -d ' ' || true)"
+    if [[ -z "$registered_local" ]]; then
+        p1_log_warn "$MODULE" "Nao foi possivel determinar o numero de imagens registradas [$attempt_label]"
+        return 1
+    fi
+
+    if (( registered_local < MIN_REGISTERED_IMAGES_LOCAL )); then
+        p1_log_warn "$MODULE" \
+            "Modelo esparso insuficiente para aceitar a tentativa [$attempt_label]: ${registered_local} < ${MIN_REGISTERED_IMAGES_LOCAL}"
+        return 1
+    fi
+
+    p1_log_info "$MODULE" \
+        "Tentativa aprovada pelo limiar de imagens registradas [$attempt_label]: ${registered_local} >= ${MIN_REGISTERED_IMAGES_LOCAL}"
+    return 0
+}
+
+attempt_mapper_auto() {
+    rm -rf "$SPARSE_PATH"/*
+    mkdir -p "$SPARSE_PATH"
+
+    p1_log_info "$MODULE" "Tentando COLMAP mapper sem par inicial explícito [colmap_auto]"
+
+    if colmap mapper \
+        --database_path "$DATABASE" \
+        --image_path "$IMAGES_DIR" \
+        --output_path "$SPARSE_PATH" \
+        --Mapper.ba_use_gpu 1 \
+        --Mapper.multiple_models 0 \
+        --Mapper.min_num_matches "$MAPPER_MIN_NUM_MATCHES" \
+        --Mapper.ba_global_max_num_iterations "$MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS" \
+        --Mapper.extract_colors 1 \
+        --Mapper.init_min_num_inliers "$MAPPER_INIT_MIN_NUM_INLIERS" \
+        --Mapper.abs_pose_min_num_inliers "$MAPPER_ABS_POSE_MIN_NUM_INLIERS" \
+        --Mapper.abs_pose_min_inlier_ratio "$MAPPER_ABS_POSE_MIN_INLIER_RATIO" \
+        --Mapper.filter_max_reproj_error "$MAPPER_FILTER_MAX_REPROJ_ERROR" \
+        --Mapper.num_threads "$MAPPER_NUM_THREADS"
+    then
+        if [[ -d "$SPARSE_RUN" ]] && [[ -f "$SPARSE_RUN/cameras.bin" || -f "$SPARSE_RUN/cameras.txt" ]]; then
+            p1_log_info "$MODULE" "Mapper concluiu com sucesso em modo colmap_auto"
+            return 0
+        fi
+
+        p1_log_warn "$MODULE" "Mapper em colmap_auto retornou sucesso, mas não gerou modelo válido em $SPARSE_RUN"
+        return 1
+    else
+        p1_log_warn "$MODULE" "Mapper falhou em modo colmap_auto"
+        return 1
+    fi
+}
+
+SUCCESS_INIT_ID1=""
+SUCCESS_INIT_ID2=""
+SUCCESS_INIT_SCORE=""
+SUCCESS_INIT_SOURCE=""
+
+ATTEMPT_COUNT=0
+SUCCESS=0
+
+if (( ${#CANDIDATE_ID1S[@]} > 0 )); then
+    for idx in "${!CANDIDATE_ID1S[@]}"; do
+        ATTEMPT_COUNT=$((ATTEMPT_COUNT + 1))
+        id1="${CANDIDATE_ID1S[$idx]}"
+        id2="${CANDIDATE_ID2S[$idx]}"
+        name1="${CANDIDATE_NAME1S[$idx]}"
+        name2="${CANDIDATE_NAME2S[$idx]}"
+        score="${CANDIDATE_SCORES[$idx]}"
+
+        p1_metric "$MODULE" "mapper_attempt_${ATTEMPT_COUNT}_image_id1" "$id1" "id"
+        p1_metric "$MODULE" "mapper_attempt_${ATTEMPT_COUNT}_image_id2" "$id2" "id"
+        [[ -n "$score" ]] && p1_metric "$MODULE" "mapper_attempt_${ATTEMPT_COUNT}_score" "$score" "score"
+
+        if attempt_mapper_with_pair "$id1" "$id2" "candidate_${ATTEMPT_COUNT}:${name1}/${name2}:score=${score:-na}"; then
+            if validate_sparse_attempt "candidate_${ATTEMPT_COUNT}:${name1}/${name2}:score=${score:-na}"; then
+                SUCCESS=1
+                SUCCESS_INIT_ID1="$id1"
+                SUCCESS_INIT_ID2="$id2"
+                SUCCESS_INIT_SCORE="$score"
+                if [[ "$name1" == "manual_config" ]]; then
+                    SUCCESS_INIT_SOURCE="manual_config"
+                else
+                    SUCCESS_INIT_SOURCE="auto_m02_fallback"
+                fi
+                break
+            fi
+        fi
+    done
 fi
 
-p1_run_cmd "$MODULE" "COLMAP mapper" \
-    colmap mapper \
-    --database_path "$DATABASE" \
-    --image_path "$IMAGES_DIR" \
-    --output_path "$SPARSE_PATH" \
-    --Mapper.ba_use_gpu 1 \
-    --Mapper.multiple_models 0 \
-    --Mapper.min_num_matches "$MAPPER_MIN_NUM_MATCHES" \
-    --Mapper.ba_global_max_num_iterations "$MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS" \
-    --Mapper.extract_colors 1 \
-    --Mapper.init_min_num_inliers "$MAPPER_INIT_MIN_NUM_INLIERS" \
-    --Mapper.abs_pose_min_num_inliers "$MAPPER_ABS_POSE_MIN_NUM_INLIERS" \
-    --Mapper.abs_pose_min_inlier_ratio "$MAPPER_ABS_POSE_MIN_INLIER_RATIO" \
-    --Mapper.filter_max_reproj_error "$MAPPER_FILTER_MAX_REPROJ_ERROR" \
-    --Mapper.num_threads 24 \
-    "${MAPPER_INIT_ARGS[@]}"
+if (( SUCCESS == 0 )); then
+    ATTEMPT_COUNT=$((ATTEMPT_COUNT + 1))
+    p1_metric "$MODULE" "mapper_attempt_${ATTEMPT_COUNT}_mode" "colmap_auto" "mode"
+
+    if attempt_mapper_auto; then
+        if validate_sparse_attempt "colmap_auto"; then
+            SUCCESS=1
+            SUCCESS_INIT_SOURCE="colmap_auto"
+        fi
+    fi
+fi
+
+p1_metric "$MODULE" "mapper_attempts_total" "$ATTEMPT_COUNT" "count"
+
+if (( SUCCESS == 0 )); then
+    p1_fail_module "$MODULE" "Todas as tentativas do COLMAP mapper falharam, inclusive fallback e colmap_auto"
+fi
+
+if [[ -n "$SUCCESS_INIT_SOURCE" ]]; then
+    p1_metric "$MODULE" "mapper_init_source" "$SUCCESS_INIT_SOURCE" "mode"
+fi
+[[ -n "$SUCCESS_INIT_ID1" ]] && p1_metric "$MODULE" "mapper_init_image_id1" "$SUCCESS_INIT_ID1" "id"
+[[ -n "$SUCCESS_INIT_ID2" ]] && p1_metric "$MODULE" "mapper_init_image_id2" "$SUCCESS_INIT_ID2" "id"
+[[ -n "$SUCCESS_INIT_SCORE" ]] && p1_metric "$MODULE" "mapper_init_score" "$SUCCESS_INIT_SCORE" "score"
 
 p1_assert_dir_exists "$MODULE" "$SPARSE_RUN"
 
