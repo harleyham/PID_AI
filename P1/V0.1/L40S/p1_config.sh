@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# Pipeline P1 - Configuração central
+# Pipeline V0.2 - Configuração central
 # ============================================================
 
 # Tipo de informação                Função correta
@@ -15,7 +15,7 @@ set -euo pipefail
 export PROJECT_ROOT="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO"
 export PIPELINE_NAME="P1_Tradicional"
 
-export DATASET="Dataset_03"
+export DATASET="Dataset_02"
 export GPU="L40S"
 
 # ============================================================
@@ -68,9 +68,9 @@ export IMAGES_DIR="$PROJECT_ROOT/00_Datasets/$DATASET/raw_images"
 
 export WORKSPACE="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/workspace_${DATASET_SLUG}/$GPU"
 export LOG_DIR="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/logs"
-export LOG_FILE="$LOG_DIR/performance_P1.csv"
-export PIPELINE_LOG="$LOG_DIR/pipeline_P1.log"
-export METRICS_CSV="$LOG_DIR/performance_P1_metrics.csv"
+export LOG_FILE="$LOG_DIR/performance_p1_${DATASET}.csv"
+export PIPELINE_LOG="$LOG_DIR/pipeline_p1_${DATASET}.log"
+export METRICS_CSV="$LOG_DIR/performance_p1_metrics_${DATASET}.csv"
 
 export INIT_PAIR_AUTO_FILE="$WORKSPACE/init_pair_auto.sh"
 export INIT_PAIR_RANKING_CSV="$WORKSPACE/init_pair_ranking.csv"
@@ -89,7 +89,7 @@ export ALIGN_PATH="$WORKSPACE/enu"
 
 export OUTPUT_DATASET_DIR="$PROJECT_ROOT/04_Produtos_Finais/$DATASET_SLUG"
 export OUTPUT_PATH="$OUTPUT_DATASET_DIR/$GPU"
-export OUTPUT_DIR="$OUTPUT_PATH/Produtos_Raster"
+export OUTPUT_DIR="$OUTPUT_PATH"
 
 export DENSE_PATH="$WORKSPACE/dense"
 export INPUT_PLY="$OUTPUT_PATH/fused_enu.ply"
@@ -97,7 +97,7 @@ export DENSE_LAS="$OUTPUT_PATH/dense_utm_color.las"
 
 # Snapshot de ambiente
 export PYTHON_BIN="python"
-export ENV_SNAPSHOT_CSV="$LOG_DIR/env_history.csv"
+export ENV_SNAPSHOT_CSV="$LOG_DIR/env_history_${DATASET}.csv"
 
 # cache_size depende da memória do computador
 # 24 -> L20S
@@ -124,6 +124,76 @@ export PatchMatchStereo_max_image_size="2600"
 export StereoFusion_check_num_images="4"
 export StereoFusion_min_num_pixels="8"
 
+# ============================================================
+# Modulo 06
+# ============================================================
+# export DEM_RESOLUTION="0.10" # Em metros
+# export DEM_NODATA="-9999"
+
+# export SMRF_SCALAR="1.25"
+# export SMRF_SLOPE="0.15"
+# export SMRF_THRESHOLD="0.50"
+# export SMRF_WINDOW="16.0"
+
+# export DTM_OUTPUT_TYPE="idw"
+# export DTM_WINDOW_SIZE="2"
+
+# export DSM_OUTPUT_TYPE="max"
+# export DSM_WINDOW_SIZE="1"
+
+
+export DEM_RESOLUTION="0.05" # Em metros
+export DEM_NODATA="-9999"
+
+export SMRF_SCALAR="1.25"
+export SMRF_SLOPE="0.15"
+export SMRF_THRESHOLD="0.50"
+export SMRF_WINDOW="16.0"
+
+export DTM_OUTPUT_TYPE="idw"
+export DTM_WINDOW_SIZE="1"
+
+export DSM_OUTPUT_TYPE="max"
+export DSM_WINDOW_SIZE="1"
+
+
+# ============================================================
+# M07 - ORTOMOSAICO
+# ============================================================
+
+export ORTHO_ENABLED="1"
+
+# resolução do ortomosaico em m/pixel
+# sugestão inicial coerente com Metashape/ODM:
+#   DS03 -> 0.03
+#   DS02 -> 0.03
+export ORTHO_RESOLUTION="0.03"
+
+# 1 = usar DSM (true-ortho aproximado)
+# 0 = usar DTM
+export ORTHO_USE_DSM="1"
+
+# quantidade máxima de imagens candidatas por tile
+export ORTHO_MAX_CANDIDATES="8"
+
+# tamanho do tile em pixels do ortho final
+export ORTHO_TILE_SIZE="1024"
+
+# modos:
+#   best_angle -> escolhe a melhor imagem por pixel
+#   first      -> primeira imagem válida
+#   mean       -> média simples das imagens válidas
+export ORTHO_BLEND_MODE="best_angle"
+
+# compressão do GeoTIFF
+export ORTHO_COMPRESS="JPEG"
+export ORTHO_JPEG_QUALITY="90"
+
+# caminhos de saída
+export ORTHO_TIF="$OUTPUT_PATH/ORTHO.tif"
+export ORTHO_VRT="$$OUTPUT_PATH/ORTHO.vrt"
+export ORTHO_PREVIEW_JPG="$OUTPUT_PATH/ORTHO_preview.jpg"
+
 
 # ============================================================
 # Utilitários
@@ -136,7 +206,7 @@ p1_ensure_dirs() {
 
 p1_print_config() {
     cat <<EOF
-================ CONFIGURAÇÃO P1 ================
+================ CONFIGURAÇÃO V0.2 ================
 ALIGN_PATH          : $ALIGN_PATH
 ALIGNMENT_TYPE      : $ALIGNMENT_TYPE
 ALIGNMENT_MAX_ERROR : $ALIGNMENT_MAX_ERROR

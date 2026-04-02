@@ -1,18 +1,20 @@
 #!/bin/bash
-# Pipeline P1 Consolidado - Projeto LIGEM (L40S)
-# Orquestrador com travas de segurança e correções de georreferenciamento
+# Pipeline P1
 
-SCRIPTS_DIR="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/03_Scripts_Common/L40S"
-WORKSPACE="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S"
-COORD_FILE="$WORKSPACE/coords_ds2.txt"
 
 echo "====================================================="
 echo "INICIANDO PROCESSAMENTO DATASET 02 - PIPELINE P1"
 echo "====================================================="
 
+
+./p1_00_check_env.sh
+
+./p1_00_env_snapshot.sh
+
+
 # Passo 1: Correção de Variável e Extração de Metadados
 echo "[PASSO 1] Extraindo coordenadas..."
-cd "$SCRIPTS_DIR" && ./p1_01_feature_extraction.sh
+./p1_01_feature_extraction.sh
 
 # Passo 2: Matching Exaustivo
 echo "[PASSO 2] Iniciando Feature Matching ..."
@@ -28,7 +30,11 @@ echo "[PASSO 4] Iniciando Densificação (Patch Match Stereo)..."
 
 # Passo 5: Geração do Baseline MDT (PDAL)
 echo "[PASSO 5] Filtrando Solo e Gerando MDT..."
+./p1_05_export_dense_robust.sh
+
 ./p1_06_DEM.sh
+
+./p1_07_orthomosaic.sh
 
 # Passo 6: Relatório de Qualidade Final
 echo "[PASSO 6] Gerando Relatório Dinâmico..."

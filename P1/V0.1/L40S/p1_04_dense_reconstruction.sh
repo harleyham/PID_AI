@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 04: Reconstrução Densa a partir do modelo ENU
+# Pipeline V0.2 - Módulo 04: Reconstrução Densa a partir do modelo ENU
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/p1_config.sh"

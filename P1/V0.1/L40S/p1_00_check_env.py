@@ -38,7 +38,7 @@ def check_binary(name):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Verificação de ambiente do pipeline P1")
+    parser = argparse.ArgumentParser(description="Verificação de ambiente do pipeline P2")
     parser.add_argument("--log-file", required=True)
     parser.add_argument("--metrics-csv", required=True)
     parser.add_argument("--dataset", required=True)

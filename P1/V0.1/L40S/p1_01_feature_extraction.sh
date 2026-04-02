@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 01: Feature Extraction
+# Pipeline V0.2 - Módulo 01: Feature Extraction
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/p1_config.sh"
@@ -41,7 +41,7 @@ p1_metric "$MODULE" "coord_file" "$COORD_FILE" "path"
 # Execução com sintaxe para COLMAP 3.14.0.dev0
 # max_image_size altera o tamanho da foto. Depende da potência da CPU e GPU
 # 1400 ok na 5060Ti e L40S.
-# Out of memory na P1000. Tirar GPU e baixar max_size para 1000.
+# Out of memory na p2000. Tirar GPU e baixar max_size para 1000.
 
 p1_log_info "$MODULE" "Consultando help do COLMAP para detectar a flag de max_image_size"
 HELP_TEXT="$(colmap feature_extractor --help 2>&1)"

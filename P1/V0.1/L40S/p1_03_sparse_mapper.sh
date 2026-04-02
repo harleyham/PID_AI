@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 03: Sparse Mapper + alinhamento ENU
+# Pipeline V0.2 - Módulo 03: Sparse Mapper + alinhamento ENU
 # Padrão consolidado:
 # - preserva o modelo local em sparse/0
 # - gera modelo alinhado separado em enu/

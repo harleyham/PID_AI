@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 06: Geração de DSM, DTM, hillshade e CHM
+# Pipeline V0.2 - Módulo 06: Geração de DSM, DTM, hillshade e CHM
 # Compatível com:
 # - p1_config.sh organizado por módulos M00..M06
 # - p1_logging.sh consolidado
@@ -95,6 +95,16 @@ PY_CMD=(
     --dataset "$DATASET"
     --gpu "$GPU"
     --module "$MODULE"
+    --resolution "${DEM_RESOLUTION:-0.10}"
+    --nodata "${DEM_NODATA:--9999}"
+    --smrf-scalar "${SMRF_SCALAR:-1.25}"
+    --smrf-slope "${SMRF_SLOPE:-0.15}"
+    --smrf-threshold "${SMRF_THRESHOLD:-0.50}"
+    --smrf-window "${SMRF_WINDOW:-16.0}"
+    --dtm-output-type "${DTM_OUTPUT_TYPE:-idw}"
+    --dtm-window-size "${DTM_WINDOW_SIZE:-2}"
+    --dsm-output-type "${DSM_OUTPUT_TYPE:-max}"
+    --dsm-window-size "${DSM_WINDOW_SIZE:-1}"
 )
 
 p1_run_cmd "$MODULE" "p1_06_GPU_DEM.py" "${PY_CMD[@]}"

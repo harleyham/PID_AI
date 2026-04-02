@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pipeline P1 - Módulo 05: Exportação da nuvem densa ENU para LAS UTM
+# Pipeline V0.2 - Módulo 05: Exportação da nuvem densa ENU para LAS UTM
 # Padrão consolidado:
 # - usa p1_config.sh + p1_logging.sh
 # - exporta LAS via p1_05_export_dense.py

@@ -120,6 +120,11 @@ def main() -> int:
     parser.add_argument("--smrf-threshold", type=float, default=0.50)
     parser.add_argument("--smrf-window", type=float, default=16.0)
 
+    parser.add_argument("--dtm-output-type", default="idw")
+    parser.add_argument("--dtm-window-size", type=int, default=2)
+    parser.add_argument("--dsm-output-type", default="max")
+    parser.add_argument("--dsm-window-size", type=int, default=1)
+
     args = parser.parse_args()
 
     log_file = args.log_file
@@ -235,10 +240,10 @@ def main() -> int:
                     "filename": str(dtm_raw),
                     "resolution": args.resolution,
                     "bounds": pdal_bounds,
-                    "output_type": "idw",
+                    "output_type": args.dtm_output_type,
                     "data_type": "float32",
                     "nodata": args.nodata,
-                    "window_size": 4,
+                    "window_size": args.dtm_window_size,
                     "gdaldriver": "GTiff",
                     "override_srs": srs,
                 }
@@ -272,10 +277,10 @@ def main() -> int:
                     "filename": str(dsm_raw),
                     "resolution": args.resolution,
                     "bounds": pdal_bounds,
-                    "output_type": "max",
+                    "output_type": args.dsm_output_type,
                     "data_type": "float32",
                     "nodata": args.nodata,
-                    "window_size": 0,
+                    "window_size": args.dsm_window_size,
                     "gdaldriver": "GTiff",
                     "override_srs": srs,
                 }
