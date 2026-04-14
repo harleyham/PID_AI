@@ -111,7 +111,7 @@ p1_metric "$MODULE" "dense_images_dir" "$DENSE_IMAGES_DIR" "path"
 
 p1_log_info "$MODULE" "Convertendo modelo COLMAP de binário para TXT"
 p1_run_cmd "$MODULE" "COLMAP model_converter" \
-    colmap model_converter \
+    "$COLMAP_BIN" model_converter \
         --input_path "$DENSE_SPARSE_DIR" \
         --output_path "$DENSE_SPARSE_TXT_DIR" \
         --output_type TXT

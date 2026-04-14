@@ -154,7 +154,7 @@ attempt_mapper_with_pair() {
 
     p1_log_info "$MODULE" "Tentando COLMAP mapper com par inicial: $pair_id1 / $pair_id2 [$pair_label]"
 
-    if colmap mapper \
+    if "$COLMAP_BIN" mapper \
         --database_path "$DATABASE" \
         --image_path "$IMAGES_DIR" \
         --output_path "$SPARSE_PATH" \
@@ -189,7 +189,7 @@ validate_sparse_attempt() {
     local sparse_stats=""
     local registered_local=""
 
-    sparse_stats="$(colmap model_analyzer --path "$SPARSE_RUN" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
+    sparse_stats="$("$COLMAP_BIN" model_analyzer --path "$SPARSE_RUN" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
     if [[ -z "$sparse_stats" ]]; then
         p1_log_warn "$MODULE" "Nao foi possivel extrair estatisticas do modelo esparso [$attempt_label]"
         return 1
@@ -218,7 +218,7 @@ attempt_mapper_auto() {
 
     p1_log_info "$MODULE" "Tentando COLMAP mapper sem par inicial explícito [colmap_auto]"
 
-    if colmap mapper \
+    if "$COLMAP_BIN" mapper \
         --database_path "$DATABASE" \
         --image_path "$IMAGES_DIR" \
         --output_path "$SPARSE_PATH" \
@@ -311,7 +311,7 @@ fi
 
 p1_assert_dir_exists "$MODULE" "$SPARSE_RUN"
 
-SPARSE_STATS="$(colmap model_analyzer --path "$SPARSE_RUN" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
+SPARSE_STATS="$("$COLMAP_BIN" model_analyzer --path "$SPARSE_RUN" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
 if [[ -n "$SPARSE_STATS" ]]; then
     p1_log_info "$MODULE" "Estatísticas do modelo esparso local:"
     while IFS= read -r line; do
@@ -338,7 +338,7 @@ if (( REGISTERED_LOCAL < MIN_REGISTERED_IMAGES_LOCAL )); then
     p1_fail_module "$MODULE" "Falha precoce: sparse local insuficiente (${REGISTERED_LOCAL} < ${MIN_REGISTERED_IMAGES_LOCAL})"
 fi
 
-ALIGN_HELP="$(colmap model_aligner --help 2>&1 || true)"
+ALIGN_HELP="$("$COLMAP_BIN" model_aligner --help 2>&1 || true)"
 ALIGN_EXTRA_ARGS=()
 
 if grep -q -- '--transform_path' <<<"$ALIGN_HELP"; then
@@ -349,7 +349,7 @@ else
 fi
 
 p1_run_cmd "$MODULE" "COLMAP model_aligner" \
-    colmap model_aligner \
+    "$COLMAP_BIN" model_aligner \
     --input_path "$SPARSE_RUN" \
     --output_path "$ENU_PATH" \
     --ref_images_path "$COORD_FILE" \
@@ -460,7 +460,7 @@ p1_metric "$MODULE" "mean_lon" "$MEAN_LON" "deg"
 p1_metric "$MODULE" "mean_alt" "$MEAN_ALT" "m"
 
 p1_run_cmd "$MODULE" "COLMAP model_converter" \
-    colmap model_converter \
+    "$COLMAP_BIN" model_converter \
     --input_path "$ENU_PATH" \
     --output_path "$OUTPUT_PATH/Esparsa_ENU.ply" \
     --output_type PLY
@@ -468,7 +468,7 @@ p1_run_cmd "$MODULE" "COLMAP model_converter" \
 p1_assert_file_exists "$MODULE" "$OUTPUT_PATH/Esparsa_ENU.ply"
 p1_assert_nonempty_file "$MODULE" "$OUTPUT_PATH/Esparsa_ENU.ply"
 
-ENU_STATS="$(colmap model_analyzer --path "$ENU_PATH" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
+ENU_STATS="$("$COLMAP_BIN" model_analyzer --path "$ENU_PATH" 2>&1 | grep -E "Registered images:|Points:|Mean reprojection error:" || true)"
 if [[ -n "$ENU_STATS" ]]; then
     p1_log_info "$MODULE" "Estatísticas do modelo alinhado ENU:"
     while IFS= read -r line; do

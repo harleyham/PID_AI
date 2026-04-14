@@ -603,34 +603,114 @@ def main():
             log_file, dataset, gpu, module, "gdal_fillnodata DSM_closed"
         ):
             return 6
-
+# $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
         # ----------------------------------------------------
         # 9) ORTHO_SURFACE híbrido
         # ----------------------------------------------------
-        if args.ortho_surface_mode == "DSM_THEN_DTM":
-            calc_expr = f"where(A=={args.nodata}, B, A)"
-        else:
-            calc_expr = f"where(B=={args.nodata}, A, B)"
+        # if args.ortho_surface_mode == "DSM_THEN_DTM":
+        #     calc_expr = f"where(A=={args.nodata}, B, A)"
+        # else:
+        #     calc_expr = f"where(B=={args.nodata}, A, B)"
 
-        if not run_cmd(
-            [
-                "gdal_calc.py",
-                "-A", str(dsm_closed_tif),
-                "-B", str(dtm_closed_tif),
-                f"--outfile={str(ortho_surface_tif)}",
-                f"--calc={calc_expr}",
-                f"--NoDataValue={args.nodata}",
-                "--type=Float32",
-                "--overwrite",
-                "--co=TILED=YES",
-                "--co=COMPRESS=DEFLATE",
-                "--co=PREDICTOR=3",
-                "--co=BIGTIFF=IF_SAFER",
-                "--quiet",
-            ],
-            log_file, dataset, gpu, module, "gdal_calc ORTHO_SURFACE"
-        ):
-            return 6
+        # if not run_cmd(
+        #     [
+        #         "gdal_calc.py",
+        #         "-A", str(dsm_closed_tif),
+        #         "-B", str(dtm_closed_tif),
+        #         f"--outfile={str(ortho_surface_tif)}",
+        #         f"--calc={calc_expr}",
+        #         f"--NoDataValue={args.nodata}",
+        #         "--type=Float32",
+        #         "--overwrite",
+        #         "--co=TILED=YES",
+        #         "--co=COMPRESS=DEFLATE",
+        #         "--co=PREDICTOR=3",
+        #         "--co=BIGTIFF=IF_SAFER",
+        #         "--quiet",
+        #     ],
+        #     log_file, dataset, gpu, module, "gdal_calc ORTHO_SURFACE"
+        # ):
+        #     return 6
+
+        # ----------------------------------------------------
+        # 9) ORTHO_SURFACE robusto
+        # Regra: ORTHO_SURFACE nunca pode ficar pior que DSM_closed.
+        # Base principal = DSM_closed
+        # Fallback        = DTM_closed apenas onde DSM_closed estiver inválido
+        # ----------------------------------------------------
+        log_info(
+            log_file, dataset, gpu, module,
+            "Montando ORTHO_SURFACE robusto a partir de DSM_closed com fallback em DTM_closed"
+        )
+
+        with rasterio.open(dsm_closed_tif) as ds_dsm:
+            dsm_arr = ds_dsm.read(1).astype(np.float32)
+            dsm_profile = ds_dsm.profile.copy()
+            dsm_nodata = ds_dsm.nodata
+
+        with rasterio.open(dtm_closed_tif) as ds_dtm:
+            dtm_arr = ds_dtm.read(1).astype(np.float32)
+            dtm_nodata = ds_dtm.nodata
+
+        def valid_mask(arr, nodata_value):
+            mask = np.isfinite(arr)
+            if nodata_value is not None:
+                mask &= (arr != nodata_value)
+            mask &= (arr != args.nodata)
+            return mask
+
+        dsm_valid = valid_mask(dsm_arr, dsm_nodata)
+        dtm_valid = valid_mask(dtm_arr, dtm_nodata)
+
+        ortho_arr = np.full(dsm_arr.shape, args.nodata, dtype=np.float32)
+        ortho_arr[dsm_valid] = dsm_arr[dsm_valid]
+
+        fill_mask = (~dsm_valid) & dtm_valid
+        ortho_arr[fill_mask] = dtm_arr[fill_mask]
+
+        # Garantia explícita:
+        # onde DSM_closed for válido, ORTHO_SURFACE deve coincidir com DSM_closed
+        ortho_arr[dsm_valid] = dsm_arr[dsm_valid]
+
+        ortho_valid = np.isfinite(ortho_arr) & (ortho_arr != args.nodata)
+
+        # Limpa chaves herdadas potencialmente problemáticas
+        dsm_profile.pop("blockxsize", None)
+        dsm_profile.pop("blockysize", None)
+        dsm_profile.pop("tiled", None)
+
+        # Escrita robusta do raster final com blocos válidos para GTiff
+        dsm_profile.update(
+            driver="GTiff",
+            dtype="float32",
+            nodata=args.nodata,
+            compress="DEFLATE",
+            predictor=3,
+            tiled=True,
+            blockxsize=256,
+            blockysize=256,
+            BIGTIFF="IF_SAFER"
+        )
+
+        with rasterio.open(ortho_surface_tif, "w", **dsm_profile) as dst:
+            dst.write(ortho_arr.astype(np.float32), 1)
+
+        dsm_holes = int((~dsm_valid).sum())
+        dtm_holes = int((~dtm_valid).sum())
+        ortho_holes = int((~ortho_valid).sum())
+        filled_from_dtm = int(fill_mask.sum())
+
+        log_info(log_file, dataset, gpu, module, f"DSM_closed pixels inválidos: {dsm_holes}")
+        log_info(log_file, dataset, gpu, module, f"DTM_closed pixels inválidos: {dtm_holes}")
+        log_info(log_file, dataset, gpu, module, f"ORTHO_SURFACE pixels inválidos: {ortho_holes}")
+        log_info(log_file, dataset, gpu, module, f"Pixels preenchidos com fallback do DTM_closed: {filled_from_dtm}")
+
+        metric(metrics_csv, dataset, gpu, module, "dsm_closed_invalid_pixels", dsm_holes, "count")
+        metric(metrics_csv, dataset, gpu, module, "dtm_closed_invalid_pixels", dtm_holes, "count")
+        metric(metrics_csv, dataset, gpu, module, "ortho_surface_invalid_pixels", ortho_holes, "count")
+        metric(metrics_csv, dataset, gpu, module, "ortho_surface_filled_from_dtm", filled_from_dtm, "count")
+
+# $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
         # ----------------------------------------------------
         # 10) Hillshade

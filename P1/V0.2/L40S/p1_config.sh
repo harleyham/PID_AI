@@ -3,6 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Pipeline V0.2 - Configuração central
+# Perfis automáticos de escalabilidade para qualidade "medium"
 # ============================================================
 
 # Tipo de informação                Função correta
@@ -17,10 +18,30 @@ set -euo pipefail
 export PROJECT_ROOT="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO"
 export PIPELINE_NAME="P1_Tradicional"
 
-export DATASET="Dataset_03"
+export DATASET="Dataset_02"
 export GPU="L40S"
-export StereoFusion_num_threads="24"
 
+
+# Binário do COLMAP usado por todos os módulos
+# export COLMAP_BIN="${COLMAP_BIN:-/usr/local/bin/colmap}"
+# export COLMAP_BIN="$HOME/opt/colmap_new/bin/colmap"
+# export COLMAP_BIN="/usr/local/bin/colmap"
+export COLMAP_BIN="$HOME/opt/colmap_ceres_cuda/bin/colmap"
+
+
+# Qualidade nominal escolhida pelo usuário
+# Mantemos "medium" como semântica externa.
+export PIPELINE_QUALITY="medium"
+
+# Modo de escala:
+# - auto   : escolhe medium_small / medium_mid / medium_large pelo nº de imagens
+# - manual : usa PIPELINE_PROFILE_NAME definido abaixo
+export PIPELINE_SCALE_MODE="auto"
+
+# Use somente se PIPELINE_SCALE_MODE="manual"
+export PIPELINE_PROFILE_NAME="medium_mid"
+
+export StereoFusion_num_threads="24"
 
 # ------------------------------------------------------------
 # Seleção automática do par inicial do M03
@@ -34,11 +55,12 @@ export INIT_PAIR_MIN_DEGREE="5"
 
 # Robustez do mapper
 export MAPPER_MIN_NUM_MATCHES="15"
-export MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS="80"
+export MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS="50"
 export MAPPER_INIT_MIN_NUM_INLIERS="80"
 export MAPPER_ABS_POSE_MIN_NUM_INLIERS="30"
 export MAPPER_ABS_POSE_MIN_INLIER_RATIO="0.20"
 export MAPPER_FILTER_MAX_REPROJ_ERROR="3"
+export MAPPER_NUM_THREADS="24"
 
 # Alinhamento
 export ALIGNMENT_MAX_ERROR="10"
@@ -63,12 +85,11 @@ esac
 
 export IMAGES_DIR="$PROJECT_ROOT/00_Datasets/$DATASET/raw_images"
 
-export WORKSPACE="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/workspace_${DATASET_SLUG}/$GPU"
+export WORKSPACE="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/workspace_${DATASET_SLUG}/${GPU}"
 export LOG_DIR="$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME/logs"
 export LOG_FILE="$LOG_DIR/performance_p1_${DATASET}.csv"
 export PIPELINE_LOG="$LOG_DIR/pipeline_p1_${DATASET}.log"
 export METRICS_CSV="$LOG_DIR/performance_p1_metrics_${DATASET}.csv"
-
 export INIT_PAIR_AUTO_FILE="$WORKSPACE/init_pair_auto.sh"
 export INIT_PAIR_RANKING_CSV="$WORKSPACE/init_pair_ranking.csv"
 
@@ -85,7 +106,7 @@ export TRANSFORM_PATH="$WORKSPACE/local_to_enu.txt"
 export ALIGN_PATH="$WORKSPACE/enu"
 
 export OUTPUT_DATASET_DIR="$PROJECT_ROOT/04_Produtos_Finais/$DATASET_SLUG"
-export OUTPUT_PATH="$OUTPUT_DATASET_DIR/$GPU"
+export OUTPUT_PATH="$OUTPUT_DATASET_DIR/${GPU}"
 export OUTPUT_DIR="$OUTPUT_PATH"
 
 export DENSE_PATH="$WORKSPACE/dense"
@@ -96,44 +117,158 @@ export DENSE_LAS="$OUTPUT_PATH/dense_utm_color.las"
 export PYTHON_BIN="python"
 export ENV_SNAPSHOT_CSV="$LOG_DIR/env_history_${DATASET}.csv"
 
+# ------------------------------------------------------------
+# Contagem de imagens do dataset
+# ------------------------------------------------------------
+if [[ -d "$IMAGES_DIR" ]]; then
+    export NUM_IMAGES="$(find "$IMAGES_DIR" -maxdepth 1 -type f \
+        \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.tif' -o -iname '*.tiff' -o -iname '*.png' \) \
+        | wc -l)"
+else
+    export NUM_IMAGES="0"
+fi
+
+# ------------------------------------------------------------
+# Resolução do perfil ativo
+# ------------------------------------------------------------
+resolve_profile_name() {
+    local quality="${PIPELINE_QUALITY}"
+    local mode="${PIPELINE_SCALE_MODE}"
+    local n="${NUM_IMAGES}"
+
+    if [[ "$quality" != "medium" ]]; then
+        echo "${quality}"
+        return
+    fi
+
+    if [[ "$mode" == "manual" ]]; then
+        echo "${PIPELINE_PROFILE_NAME}"
+        return
+    fi
+
+    # auto
+    if (( n <= 100 )); then
+        echo "medium_small"
+    elif (( n <= 500 )); then
+        echo "medium_mid"
+    else
+        echo "medium_large"
+    fi
+}
+
+export ACTIVE_PROFILE_NAME="$(resolve_profile_name)"
+
+# ------------------------------------------------------------
+# Perfil base de memória / cache
+# ------------------------------------------------------------
 # cache_size depende da memória do computador
-# 24 -> L20S/L40S
+# 20 -> L40S / 5060Ti
 # 8  -> P1000
-export RAM="20"
-
-# colmap exhaustive_matcher.FeatureMatching.max_num_matches
-export NUM_MATCHES="40000"
-
-# ------------------------------------------------------------
-# Módulo 01
-# ------------------------------------------------------------
-export MAX_NUM_FEATURES="60000"
-export Extraction_max_image_size="1600"
+case "$GPU" in
+    P1000) export RAM="8" ;;
+    *)     export RAM="20" ;;
+esac
 
 # ------------------------------------------------------------
-# Módulo 04 - reconstrução densa
-# Foco atual: aumentar cobertura útil da nuvem densa
+# Parâmetros dependentes do perfil
+# A ideia é manter a qualidade nominal "medium",
+# mas com implementação mais escalável.
 # ------------------------------------------------------------
-export COLMAP_GPU_INDEX="0"
+case "$ACTIVE_PROFILE_NAME" in
+    medium_small)
+        # ----------------------------------------------------
+        # matching / features
+        # ----------------------------------------------------
+        export NUM_MATCHES="30000"
+        export MAX_NUM_FEATURES="50000"
+        export Extraction_max_image_size="1500"
 
-# patch_match: mais cobertura útil, mantendo um perfil ainda estável
-export PatchMatchStereo_max_image_size="2600"
-export PatchMatchStereo_num_iterations="4"
-export PatchMatchStereo_num_samples="20"
-export PatchMatchStereo_window_radius="6"
-export PatchMatchStereo_window_step="1"
-export PatchMatchStereo_geom_consistency="false"
+        # mapper
+        export MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS="50"
 
-# stereo_fusion: reduzir rigidez para aumentar cobertura
-export StereoFusion_check_num_images="2"
-export StereoFusion_min_num_pixels="4"
+        # M04 - compromisso melhor para datasets pequenos
+        export COLMAP_GPU_INDEX="0"
+        export PatchMatchStereo_max_image_size="2200"
+        export PatchMatchStereo_num_iterations="3"
+        export PatchMatchStereo_num_samples="16"
+        export PatchMatchStereo_window_radius="6"
+        export PatchMatchStereo_window_step="1"
+        export PatchMatchStereo_geom_consistency="false"
+        export StereoFusion_check_num_images="2"
+        export StereoFusion_min_num_pixels="4"
+        ;;
+
+    medium_mid)
+        # ----------------------------------------------------
+        # matching / features
+        # ----------------------------------------------------
+        export NUM_MATCHES="28000"
+        export MAX_NUM_FEATURES="45000"
+        export Extraction_max_image_size="1450"
+
+        # mapper
+        export MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS="45"
+
+        # M04 - perfil intermediário escalável
+        export COLMAP_GPU_INDEX="0"
+        export PatchMatchStereo_max_image_size="1800"
+        export PatchMatchStereo_num_iterations="3"
+        export PatchMatchStereo_num_samples="12"
+        export PatchMatchStereo_window_radius="5"
+        export PatchMatchStereo_window_step="2"
+        export PatchMatchStereo_geom_consistency="false"
+        export StereoFusion_check_num_images="2"
+        export StereoFusion_min_num_pixels="4"
+        ;;
+
+    medium_large)
+        # ----------------------------------------------------
+        # matching / features
+        # ----------------------------------------------------
+        export NUM_MATCHES="24000"
+        export MAX_NUM_FEATURES="40000"
+        export Extraction_max_image_size="1400"
+
+        # mapper
+        export MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS="40"
+
+        # M04 - foco em escalabilidade para datasets grandes
+        # alinhado à filosofia do FAQ do COLMAP:
+        # reduzir max_image_size, samples, iterations e subir window_step
+        export COLMAP_GPU_INDEX="0"
+        export PatchMatchStereo_max_image_size="1600"
+        export PatchMatchStereo_num_iterations="3"
+        export PatchMatchStereo_num_samples="10"
+        export PatchMatchStereo_window_radius="5"
+        export PatchMatchStereo_window_step="2"
+        export PatchMatchStereo_geom_consistency="false"
+        export StereoFusion_check_num_images="2"
+        export StereoFusion_min_num_pixels="4"
+        ;;
+
+    *)
+        # fallback seguro
+        export NUM_MATCHES="28000"
+        export MAX_NUM_FEATURES="45000"
+        export Extraction_max_image_size="1450"
+        export MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS="45"
+
+        export COLMAP_GPU_INDEX="0"
+        export PatchMatchStereo_max_image_size="1800"
+        export PatchMatchStereo_num_iterations="3"
+        export PatchMatchStereo_num_samples="12"
+        export PatchMatchStereo_window_radius="5"
+        export PatchMatchStereo_window_step="2"
+        export PatchMatchStereo_geom_consistency="false"
+        export StereoFusion_check_num_images="2"
+        export StereoFusion_min_num_pixels="4"
+        ;;
+esac
 
 # ------------------------------------------------------------
 # Módulo 06 - DEM / DSM / DTM / CHM
-# Foco atual:
-# 1) melhorar terra nua
-# 2) reduzir vazios
-# 3) gerar superfícies fechadas para uso posterior
+# Mantido estável; a lógica de perfil hoje está focada
+# principalmente em M01/M02/M03/M04.
 # ------------------------------------------------------------
 export DEM_RESOLUTION="0.05"   # metros
 export DEM_NODATA="-9999"
@@ -144,44 +279,29 @@ export SMRF_SLOPE="0.15"
 export SMRF_THRESHOLD="0.50"
 export SMRF_WINDOW="16.0"
 
-# Produtos analíticos (mais fiéis)
+# Produtos analíticos
 export DTM_OUTPUT_TYPE="idw"
 export DTM_WINDOW_SIZE="2"
 
 export DSM_OUTPUT_TYPE="max"
 export DSM_WINDOW_SIZE="1"
 
-# Produtos fechados (mais contínuos) para ortho/contorno
+# Produtos fechados
 export DTM_CLOSED_OUTPUT_TYPE="idw"
-export DTM_CLOSED_WINDOW_SIZE="8"
+export DTM_CLOSED_WINDOW_SIZE="10"
 
 export DSM_CLOSED_OUTPUT_TYPE="idw"
-export DSM_CLOSED_WINDOW_SIZE="4"
+export DSM_CLOSED_WINDOW_SIZE="6"
 
 # fillnodata dedicado por superfície
-export DTM_FILLNODATA_MAX_DISTANCE="60"
-export DSM_FILLNODATA_MAX_DISTANCE="30"
+export DTM_FILLNODATA_MAX_DISTANCE="80"
+export DSM_FILLNODATA_MAX_DISTANCE="60"
 export FILLNODATA_SMOOTHING_ITERATIONS="1"
 
 # superfície híbrida para ortho/uso posterior
 export ORTHO_SURFACE_MODE="DSM_THEN_DTM"
 
 # Pré-filtro de outliers baixos antes do SMRF
-# Objetivo: remover pontos espúrios muito abaixo da superfície real,
-# que estão contaminando o DSM/DTM e derrubando o Z mínimo.
-
-
-# piso robusto:
-# calcula o percentil inferior da cota Z e aceita apenas pontos
-# acima de (percentil - margem_em_metros)
-
-#    Leitura desses parâmetros
-# LOW_OUTLIER_PERCENTILE="1.0"
-# usa o percentil 1% da distribuição de Z como referência robusta;
-# LOW_OUTLIER_MARGIN="5.0"
-# aceita pontos até 5 metros abaixo desse percentil;
-# OUTLIER_MEAN_K="12" e OUTLIER_MULTIPLIER="2.5"
-# removem pontos isolados via filtro estatístico antes do corte por Z.
 export LOW_OUTLIER_ENABLE="1"
 export LOW_OUTLIER_PERCENTILE="1.0"
 export LOW_OUTLIER_MARGIN="5.0"
@@ -192,7 +312,8 @@ export OUTLIER_MULTIPLIER="2.5"
 
 # ------------------------------------------------------------
 # M07 - ORTOMOSAICO
-# Mantido por compatibilidade, mas não é a prioridade agora
+# Mantido estável por enquanto. A escalabilidade principal
+# está sendo tratada no M04.
 # ------------------------------------------------------------
 export ORTHO_ENABLED="1"
 export ORTHO_RESOLUTION="0.03"
@@ -218,38 +339,68 @@ p1_ensure_dirs() {
 p1_print_config() {
     cat <<EOF
 ================ CONFIGURAÇÃO V0.2 ================
-ALIGN_PATH          : $ALIGN_PATH
-ALIGNMENT_TYPE      : $ALIGNMENT_TYPE
-ALIGNMENT_MAX_ERROR : $ALIGNMENT_MAX_ERROR
-COORD_FILE          : $COORD_FILE
-DATABASE            : $DATABASE
-DATASET             : $DATASET
-DATASET_SLUG        : $DATASET_SLUG
-DENSE_LAS           : $DENSE_LAS
-DENSE_PATH          : $DENSE_PATH
-ENU_META_JSON       : $ENU_META_JSON
-ENU_PATH            : $ENU_PATH
-GPU                 : $GPU
-IMAGES_DIR          : $IMAGES_DIR
-INPUT_PLY           : $INPUT_PLY
-LOG_DIR             : $LOG_DIR
-LOG_FILE            : $LOG_FILE
+COLMAP_BIN                       : $COLMAP_BIN
+DATASET                          : $DATASET
+DATASET_SLUG                     : $DATASET_SLUG
+NUM_IMAGES                       : $NUM_IMAGES
+PIPELINE_QUALITY                 : $PIPELINE_QUALITY
+PIPELINE_SCALE_MODE              : $PIPELINE_SCALE_MODE
+PIPELINE_PROFILE_NAME            : $PIPELINE_PROFILE_NAME
+ACTIVE_PROFILE_NAME              : $ACTIVE_PROFILE_NAME
+GPU                              : $GPU
+PROJECT_ROOT                     : $PROJECT_ROOT
+PIPELINE_NAME                    : $PIPELINE_NAME
+IMAGES_DIR                       : $IMAGES_DIR
+WORKSPACE                        : $WORKSPACE
+SPARSE_PATH                      : $SPARSE_PATH
+DENSE_PATH                       : $DENSE_PATH
+OUTPUT_PATH                      : $OUTPUT_PATH
+OUTPUT_DIR                       : $OUTPUT_DIR
+ENU_META_JSON                    : $ENU_META_JSON
+TRANSFORM_PATH                   : $TRANSFORM_PATH
+DATABASE                      p1_print   : $DATABASE
+COORD_FILE                       : $COORD_FILE
+INPUT_PLY                        : $INPUT_PLY
+DENSE_LAS                        : $DENSE_LAS
+LOG_DIR                          : $LOG_DIR
+LOG_FILE                         : $LOG_FILE
+RAM                              : $RAM
+
+OUTPUT_DATASET_DIR               : $OUTPUT_DATASET_DIR
+OUTPUT_PATH                      : $OUTPUT_PATH
+OUTPUT_DIR                       : $OUTPUT_DIR
+LOG_FILE                         : $LOG_FILE
+PIPELINE_LOG                     : $PIPELINE_LOG
+METRICS_CSV                      : $METRICS_CSV
+ENV_SNAPSHOT_CSV                 : $ENV_SNAPSHOT_CSV
+
+
+NUM_MATCHES                      : $NUM_MATCHES
+MAX_NUM_FEATURES                 : $MAX_NUM_FEATURES
+Extraction_max_image_size        : $Extraction_max_image_size
+
 MAPPER_MIN_NUM_MATCHES               : $MAPPER_MIN_NUM_MATCHES
 MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS  : $MAPPER_BA_GLOBAL_MAX_NUM_ITERATIONS
 MAPPER_INIT_MIN_NUM_INLIERS          : $MAPPER_INIT_MIN_NUM_INLIERS
 MAPPER_ABS_POSE_MIN_NUM_INLIERS      : $MAPPER_ABS_POSE_MIN_NUM_INLIERS
 MAPPER_ABS_POSE_MIN_INLIER_RATIO     : $MAPPER_ABS_POSE_MIN_INLIER_RATIO
 MAPPER_FILTER_MAX_REPROJ_ERROR       : $MAPPER_FILTER_MAX_REPROJ_ERROR
-OUTPUT_DATASET_DIR  : $OUTPUT_DATASET_DIR
-OUTPUT_DIR          : $OUTPUT_DIR
-OUTPUT_PATH         : $OUTPUT_PATH
-PIPELINE_NAME       : $PIPELINE_NAME
-PROJECT_ROOT        : $PROJECT_ROOT
-RAM                 : $RAM
-SCRIPT_DIR          : $SCRIPT_DIR
-SPARSE_PATH         : $SPARSE_PATH
-TRANSFORM_PATH      : $TRANSFORM_PATH
-WORKSPACE           : $WORKSPACE
+MAPPER_NUM_THREADS                   : $MAPPER_NUM_THREADS
+
+PatchMatchStereo_max_image_size  : $PatchMatchStereo_max_image_size
+PatchMatchStereo_num_iterations  : $PatchMatchStereo_num_iterations
+PatchMatchStereo_num_samples     : $PatchMatchStereo_num_samples
+PatchMatchStereo_window_radius   : $PatchMatchStereo_window_radius
+PatchMatchStereo_window_step     : $PatchMatchStereo_window_step
+PatchMatchStereo_geom_consistency: $PatchMatchStereo_geom_consistency
+StereoFusion_check_num_images    : $StereoFusion_check_num_images
+StereoFusion_min_num_pixels      : $StereoFusion_min_num_pixels
+StereoFusion_num_threads         : $StereoFusion_num_threads
+
+ORTHO_RESOLUTION                 : $ORTHO_RESOLUTION
+ORTHO_MAX_CANDIDATES             : $ORTHO_MAX_CANDIDATES
+ORTHO_TILE_SIZE                  : $ORTHO_TILE_SIZE
+ORTHO_BLEND_MODE                 : $ORTHO_BLEND_MODE
 =================================================
 EOF
 }

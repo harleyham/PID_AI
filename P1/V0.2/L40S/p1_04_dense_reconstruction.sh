@@ -60,14 +60,14 @@ p1_metric "$MODULE" "fusion_check_num_images" "$StereoFusion_check_num_images" "
 p1_metric "$MODULE" "fusion_min_num_pixels" "$StereoFusion_min_num_pixels" "count"
 
 p1_log_info "$MODULE" "Executando image_undistorter"
-p1_run_cmd "$MODULE" "colmap image_undistorter" colmap image_undistorter \
+p1_run_cmd "$MODULE" "colmap image_undistorter" "$COLMAP_BIN" image_undistorter \
     --image_path "$IMAGES_DIR" \
     --input_path "$ALIGN_PATH" \
     --output_path "$DENSE_PATH" \
     --output_type COLMAP
 
 p1_log_info "$MODULE" "Executando patch_match_stereo"
-p1_run_cmd "$MODULE" "colmap patch_match_stereo" colmap patch_match_stereo \
+p1_run_cmd "$MODULE" "colmap patch_match_stereo" "$COLMAP_BIN" patch_match_stereo \
     --workspace_path "$DENSE_PATH" \
     --workspace_format COLMAP \
     --PatchMatchStereo.gpu_index "$COLMAP_GPU_INDEX" \
@@ -80,7 +80,7 @@ p1_run_cmd "$MODULE" "colmap patch_match_stereo" colmap patch_match_stereo \
     --PatchMatchStereo.cache_size "$RAM"
 
 p1_log_info "$MODULE" "Executando stereo_fusion"
-p1_run_cmd "$MODULE" "colmap stereo_fusion" colmap stereo_fusion \
+p1_run_cmd "$MODULE" "colmap stereo_fusion" "$COLMAP_BIN" stereo_fusion \
     --workspace_path "$DENSE_PATH" \
     --workspace_format COLMAP \
     --input_type photometric \

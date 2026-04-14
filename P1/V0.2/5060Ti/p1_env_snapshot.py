@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import datetime
+import os
 import re
 import shutil
 import socket
@@ -10,6 +11,7 @@ from typing import Tuple
 
 
 DELIMITER = ";"
+COLMAP_BIN = os.environ.get("COLMAP_BIN", "colmap")
 
 
 # =========================
@@ -30,6 +32,14 @@ def run(cmd):
         return out.strip()
     except Exception:
         return None
+
+
+def resolve_executable(cmd):
+    if not cmd:
+        return None
+    if "/" in cmd:
+        return cmd if os.path.isfile(cmd) and os.access(cmd, os.X_OK) else None
+    return shutil.which(cmd)
 
 
 def csv_escape(value):
@@ -260,13 +270,13 @@ def get_pdal_info():
 # COLMAP
 # =========================
 def get_colmap_version():
-    if not shutil.which("colmap"):
+    if not resolve_executable(COLMAP_BIN):
         return "NOT_FOUND"
 
     candidates = [
-        ["colmap", "version"],
-        ["colmap", "-h"],
-        ["colmap", "help"],
+        [COLMAP_BIN, "version"],
+        [COLMAP_BIN, "-h"],
+        [COLMAP_BIN, "help"],
     ]
 
     for cmd in candidates:

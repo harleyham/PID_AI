@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib
+import os
 import shutil
 import sys
 
@@ -14,11 +15,12 @@ REQUIRED_PYTHON_MODULES = [
 ]
 
 REQUIRED_BINARIES = [
-    ("colmap", True),
     ("pdal", True),
     ("gdalinfo", True),
     ("python", True),
 ]
+
+COLMAP_BIN = os.environ.get("COLMAP_BIN", "colmap")
 
 
 def check_python_module(name):
@@ -33,6 +35,13 @@ def check_python_module(name):
 def check_binary(name):
     path = shutil.which(name)
     return path is not None, path
+
+
+def check_executable(cmd):
+    if "/" in cmd:
+        ok = os.path.isfile(cmd) and os.access(cmd, os.X_OK)
+        return ok, cmd if ok else None
+    return check_binary(cmd)
 
 
 def main():
@@ -79,6 +88,19 @@ def main():
     # System binaries
     # -------------------------
     log_info(args.log_file, args.dataset, args.gpu, args.module, "Verificando binários do sistema")
+
+    colmap_ok, colmap_path = check_executable(COLMAP_BIN)
+    if colmap_ok:
+        log_info(args.log_file, args.dataset, args.gpu, args.module,
+                 f"OK binary: COLMAP_BIN ({colmap_path})")
+        metric(args.metrics_csv, args.dataset, args.gpu, args.module,
+               "binary_colmap", 1, "bool")
+    else:
+        msg = f"FALTA binary: COLMAP_BIN ({COLMAP_BIN})"
+        log_error(args.log_file, args.dataset, args.gpu, args.module, msg)
+        metric(args.metrics_csv, args.dataset, args.gpu, args.module,
+               "binary_colmap", 0, "bool", "FAILED")
+        failures += 1
 
     for name, required in REQUIRED_BINARIES:
         ok, path = check_binary(name)

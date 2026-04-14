@@ -340,6 +340,8 @@ def main():
     parser.add_argument("--tile-size", type=int, default=1024)
     parser.add_argument("--blend-mode", choices=["best_angle", "first", "mean"], default="best_angle")
     parser.add_argument("--max-candidates", type=int, default=8)
+    parser.add_argument("--retry-max-candidates", type=int, default=12)
+    parser.add_argument("--retry-fill-threshold", type=float, default=0.85)
     parser.add_argument("--compress", default="DEFLATE")
     parser.add_argument("--jpeg-quality", type=int, default=90)
 
@@ -564,98 +566,112 @@ def main():
                         dists.append((dist, idx_img))
                     dists.sort(key=lambda x: x[0])
 
-                    candidate_indices = [idx for _, idx in dists[:max_candidates]]
-                    candidates = [image_models[i] for i in candidate_indices]
+                    def render_tile_with_candidate_limit(cand_limit: int):
+                        candidate_indices_local = [idx for _, idx in dists[:cand_limit]]
+                        candidates_local = [image_models[i] for i in candidate_indices_local]
 
-                    if blend_mode == "mean":
-                        accum = np.zeros((tile_h * tile_w, 3), dtype=np.float64)
-                        count = np.zeros(tile_h * tile_w, dtype=np.int32)
-                        filled_flat = np.zeros(tile_h * tile_w, dtype=bool)
-                    else:
-                        best_score = np.full(tile_h * tile_w, -np.inf, dtype=np.float64)
-                        best_rgb = np.zeros((tile_h * tile_w, 3), dtype=np.uint8)
-                        filled_flat = np.zeros(tile_h * tile_w, dtype=bool)
+                        if blend_mode == "mean":
+                            accum = np.zeros((tile_h * tile_w, 3), dtype=np.float64)
+                            count = np.zeros(tile_h * tile_w, dtype=np.int32)
+                            filled_flat_local = np.zeros(tile_h * tile_w, dtype=bool)
+                        else:
+                            best_score_local = np.full(tile_h * tile_w, -np.inf, dtype=np.float64)
+                            best_rgb_local = np.zeros((tile_h * tile_w, 3), dtype=np.uint8)
+                            filled_flat_local = np.zeros(tile_h * tile_w, dtype=bool)
 
-                    for cand in candidates:
-                        R = cand["R"]
-                        t = cand["t"]
-                        C = cand["C"]
-                        axis = cand["axis"]
-                        K = cand["K"]
+                        for cand in candidates_local:
+                            R = cand["R"]
+                            t = cand["t"]
+                            C = cand["C"]
+                            axis = cand["axis"]
+                            K = cand["K"]
 
-                        uv, ok_depth, zc = project_points(K, R, t, xyz)
-                        u = uv[:, 0]
-                        v = uv[:, 1]
+                            uv, ok_depth, zc = project_points(K, R, t, xyz)
+                            u = uv[:, 0]
+                            v = uv[:, 1]
 
-                        inside_img = (
-                            ok_depth &
-                            (u >= 0) & (u < cand["width"] - 1) &
-                            (v >= 0) & (v < cand["height"] - 1)
-                        )
+                            inside_img = (
+                                ok_depth &
+                                (u >= 0) & (u < cand["width"] - 1) &
+                                (v >= 0) & (v < cand["height"] - 1)
+                            )
 
-                        if not np.any(inside_img):
-                            continue
+                            if not np.any(inside_img):
+                                continue
 
-                        rays = xyz - C[None, :]
-                        ray_norm = np.linalg.norm(rays, axis=1) + 1e-12
-                        rays_unit = rays / ray_norm[:, None]
+                            rays = xyz - C[None, :]
+                            ray_norm = np.linalg.norm(rays, axis=1) + 1e-12
+                            rays_unit = rays / ray_norm[:, None]
 
-                        cosang = np.einsum("ij,j->i", rays_unit, axis)
-                        score = np.full(xyz.shape[0], -np.inf, dtype=np.float64)
-                        score[inside_img] = cosang[inside_img] / ray_norm[inside_img]
+                            cosang = np.einsum("ij,j->i", rays_unit, axis)
+                            score = np.full(xyz.shape[0], -np.inf, dtype=np.float64)
+                            score[inside_img] = cosang[inside_img] / ray_norm[inside_img]
 
-                        with rasterio.open(cand["path"]) as src:
-                            rgb, sampled = bilinear_sample_rgb(src, u, v)
+                            with rasterio.open(cand["path"]) as src_img:
+                                rgb, sampled = bilinear_sample_rgb(src_img, u, v)
 
-                        use = inside_img & sampled
-                        if not np.any(use):
-                            continue
+                            use = inside_img & sampled
+                            if not np.any(use):
+                                continue
 
-                        flat_use_idx = valid_flat_idx[use]
+                            flat_use_idx = valid_flat_idx[use]
 
-                        if blend_mode == "first":
-                            new_mask = ~filled_flat[flat_use_idx]
-                            if np.any(new_mask):
-                                dst_idx = flat_use_idx[new_mask]
-                                src_rgb = rgb[use][new_mask]
-                                best_rgb[dst_idx] = src_rgb
-                                best_score[dst_idx] = score[use][new_mask]
-                                filled_flat[dst_idx] = True
+                            if blend_mode == "first":
+                                new_mask = ~filled_flat_local[flat_use_idx]
+                                if np.any(new_mask):
+                                    dst_idx = flat_use_idx[new_mask]
+                                    src_rgb = rgb[use][new_mask]
+                                    best_rgb_local[dst_idx] = src_rgb
+                                    best_score_local[dst_idx] = score[use][new_mask]
+                                    filled_flat_local[dst_idx] = True
 
-                        elif blend_mode == "mean":
-                            accum[flat_use_idx] += rgb[use].astype(np.float64)
-                            count[flat_use_idx] += 1
-                            filled_flat[flat_use_idx] = True
+                            elif blend_mode == "mean":
+                                accum[flat_use_idx] += rgb[use].astype(np.float64)
+                                count[flat_use_idx] += 1
+                                filled_flat_local[flat_use_idx] = True
 
-                        else:  # best_angle
-                            better = score[use] > best_score[flat_use_idx]
-                            if np.any(better):
-                                dst_idx = flat_use_idx[better]
-                                src_rgb = rgb[use][better]
-                                best_rgb[dst_idx] = src_rgb
-                                best_score[dst_idx] = score[use][better]
-                                filled_flat[dst_idx] = True
+                            else:  # best_angle
+                                better = score[use] > best_score_local[flat_use_idx]
+                                if np.any(better):
+                                    dst_idx = flat_use_idx[better]
+                                    src_rgb = rgb[use][better]
+                                    best_rgb_local[dst_idx] = src_rgb
+                                    best_score_local[dst_idx] = score[use][better]
+                                    filled_flat_local[dst_idx] = True
 
-                    if blend_mode == "mean":
-                        out_flat = np.zeros((tile_h * tile_w, 3), dtype=np.uint8)
-                        nz = count > 0
-                        out_flat[nz] = np.clip(accum[nz] / count[nz, None], 0, 255).astype(np.uint8)
-                    else:
-                        out_flat = best_rgb
+                        if blend_mode == "mean":
+                            out_flat_local = np.zeros((tile_h * tile_w, 3), dtype=np.uint8)
+                            nz = count > 0
+                            out_flat_local[nz] = np.clip(accum[nz] / count[nz, None], 0, 255).astype(np.uint8)
+                        else:
+                            out_flat_local = best_rgb_local
 
-                    alpha_flat = np.where(filled_flat, 255, 0).astype(np.uint8)
+                        alpha_flat_local = np.where(filled_flat_local, 255, 0).astype(np.uint8)
+                        fill_ratio_local = float(np.count_nonzero(alpha_flat_local)) / float(alpha_flat_local.size) if alpha_flat_local.size else 0.0
 
-                    tile_rgba = np.zeros((tile_h, tile_w, 4), dtype=np.uint8)
-                    tile_rgba[:, :, 0:3] = out_flat.reshape(tile_h, tile_w, 3)
-                    tile_rgba[:, :, 3] = alpha_flat.reshape(tile_h, tile_w)
+                        tile_rgba_local = np.zeros((tile_h, tile_w, 4), dtype=np.uint8)
+                        tile_rgba_local[:, :, 0:3] = out_flat_local.reshape(tile_h, tile_w, 3)
+                        tile_rgba_local[:, :, 3] = alpha_flat_local.reshape(tile_h, tile_w)
+
+                        return tile_rgba_local, alpha_flat_local, fill_ratio_local
+
+                    tile_rgba, alpha_flat, fill_ratio = render_tile_with_candidate_limit(max_candidates)
+
+                    retry_max_candidates = max(int(args.retry_max_candidates), max_candidates)
+                    retry_fill_threshold = float(args.retry_fill_threshold)
+
+                    if fill_ratio < retry_fill_threshold and retry_max_candidates > max_candidates:
+                        tile_rgba_retry, alpha_flat_retry, fill_ratio_retry = render_tile_with_candidate_limit(retry_max_candidates)
+                        if fill_ratio_retry > fill_ratio:
+                            tile_rgba = tile_rgba_retry
+                            alpha_flat = alpha_flat_retry
+                            fill_ratio = fill_ratio_retry
 
                     dst.write(tile_rgba[:, :, 0], 1, window=Window(col0, row0, tile_w, tile_h))
                     dst.write(tile_rgba[:, :, 1], 2, window=Window(col0, row0, tile_w, tile_h))
                     dst.write(tile_rgba[:, :, 2], 3, window=Window(col0, row0, tile_w, tile_h))
                     dst.write(tile_rgba[:, :, 3], 4, window=Window(col0, row0, tile_w, tile_h))
                     if tile_index == 1 or tile_index == total_tiles or (tile_index % progress_interval) == 0:
-                        filled_count = int(np.count_nonzero(alpha_flat))
-                        fill_ratio = filled_count / alpha_flat.size if alpha_flat.size else 0.0
                         log_line(
                             log_file, dataset, gpu, module, "INFO",
                             f"Progresso tiles: {tile_index}/{total_tiles} "

@@ -42,7 +42,7 @@ p1_metric "$MODULE" "init_pair_min_inliers" "$INIT_PAIR_MIN_INLIERS" "count"
 p1_metric "$MODULE" "init_pair_min_degree" "$INIT_PAIR_MIN_DEGREE" "count"
 
 p1_run_cmd "$MODULE" "colmap exhaustive_matcher" \
-    colmap exhaustive_matcher \
+    "$COLMAP_BIN" exhaustive_matcher \
     --database_path "$DATABASE" \
     --FeatureMatching.use_gpu 1 \
     --FeatureMatching.max_num_matches "$NUM_MATCHES"

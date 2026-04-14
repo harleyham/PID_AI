@@ -14,6 +14,7 @@ import rasterio
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "p1_config.sh"
+COLMAP_BIN = os.environ.get("COLMAP_BIN", "colmap")
 
 
 def load_config() -> dict[str, str]:
@@ -142,7 +143,7 @@ def get_colmap_stats(sparse_dir: str) -> tuple[str, str, str]:
 
     try:
         result = subprocess.run(
-            ["colmap", "model_analyzer", "--path", sparse_dir],
+            [COLMAP_BIN, "model_analyzer", "--path", sparse_dir],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

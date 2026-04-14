@@ -44,7 +44,7 @@ p1_metric "$MODULE" "coord_file" "$COORD_FILE" "path"
 # Out of memory na p2000. Tirar GPU e baixar max_size para 1000.
 
 p1_log_info "$MODULE" "Consultando help do COLMAP para detectar a flag de max_image_size"
-HELP_TEXT="$(colmap feature_extractor --help 2>&1)"
+HELP_TEXT="$("$COLMAP_BIN" feature_extractor --help 2>&1)"
 
 if grep -q -- '--FeatureExtraction.max_image_size' <<<"$HELP_TEXT"; then
     MAX_IMG_FLAG="--FeatureExtraction.max_image_size"
@@ -60,7 +60,7 @@ p1_metric "$MODULE" "max_image_size" "$Extraction_max_image_size" "pixels"
 p1_metric "$MODULE" "max_num_features" "$MAX_NUM_FEATURES" "count"
 
 p1_run_cmd "$MODULE" "colmap feature_extractor" \
-    colmap feature_extractor \
+    "$COLMAP_BIN" feature_extractor \
     --database_path "$DATABASE" \
     --image_path "$IMAGES_DIR" \
     --ImageReader.single_camera 1 \

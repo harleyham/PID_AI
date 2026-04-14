@@ -61,6 +61,7 @@ DSM_TIF="$OUTPUT_DIR/DSM.tif"
 DTM_TIF="$OUTPUT_DIR/DTM.tif"
 DSM_CLOSED_TIF="$OUTPUT_DIR/DSM_closed.tif"
 DTM_CLOSED_TIF="$OUTPUT_DIR/DTM_closed.tif"
+ORTHO_SURFACE_TIF="$OUTPUT_DIR/ORTHO_SURFACE.tif"
 
 ORTHO_SURFACE="$DSM_TIF"
 
@@ -68,11 +69,15 @@ if [[ "$ORTHO_USE_DSM" != "1" ]]; then
     ORTHO_SURFACE="$DTM_TIF"
 fi
 
+if [[ -f "$ORTHO_SURFACE_TIF" ]]; then
+    ORTHO_SURFACE="$ORTHO_SURFACE_TIF"
+fi
+
 # Preferir superfície fechada se existir
-if [[ "$ORTHO_USE_DSM" == "1" && -f "$DSM_CLOSED_TIF" ]]; then
+if [[ ! -f "$ORTHO_SURFACE_TIF" && "$ORTHO_USE_DSM" == "1" && -f "$DSM_CLOSED_TIF" ]]; then
     ORTHO_SURFACE="$DSM_CLOSED_TIF"
 fi
-if [[ "$ORTHO_USE_DSM" != "1" && -f "$DTM_CLOSED_TIF" ]]; then
+if [[ ! -f "$ORTHO_SURFACE_TIF" && "$ORTHO_USE_DSM" != "1" && -f "$DTM_CLOSED_TIF" ]]; then
     ORTHO_SURFACE="$DTM_CLOSED_TIF"
 fi
 
@@ -106,7 +111,7 @@ p1_metric "$MODULE" "dense_images_dir" "$DENSE_IMAGES_DIR" "path"
 
 p1_log_info "$MODULE" "Convertendo modelo COLMAP de binário para TXT"
 p1_run_cmd "$MODULE" "COLMAP model_converter" \
-    colmap model_converter \
+    "$COLMAP_BIN" model_converter \
         --input_path "$DENSE_SPARSE_DIR" \
         --output_path "$DENSE_SPARSE_TXT_DIR" \
         --output_type TXT
