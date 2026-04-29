@@ -275,7 +275,7 @@ def generate() -> int:
     metrics_csv = config["METRICS_CSV"]
     output_path = config["OUTPUT_PATH"]
     dense_las = config["DENSE_LAS"]
-    ortho_tif = config.get("ORTHO_TIF", f"{output_path}/ORTHO.tif")
+    ortho_tif = config.get("ORTHO_TIF", f"{output_path}/ORTHO_{config['DATASET_SLUG']}.tif")
 
     metrics_rows = read_metrics_csv(metrics_csv)
 
@@ -286,12 +286,12 @@ def generate() -> int:
 
     las_stats = get_las_stats(dense_las)
 
-    dtm_stats = get_raster_stats(str(Path(output_path) / "DTM.tif"))
-    dsm_stats = get_raster_stats(str(Path(output_path) / "DSM.tif"))
-    dtm_closed_stats = get_raster_stats(str(Path(output_path) / "DTM_closed.tif"))
-    dsm_closed_stats = get_raster_stats(str(Path(output_path) / "DSM_closed.tif"))
-    ortho_surface_stats = get_raster_stats(str(Path(output_path) / "ORTHO_SURFACE.tif"))
-    chm_stats = get_raster_stats(str(Path(output_path) / "CHM.tif"))
+    dtm_stats = get_raster_stats(str(Path(output_path) / f"DTM_{config['DATASET_SLUG']}.tif"))
+    dsm_stats = get_raster_stats(str(Path(output_path) / f"DSM_{config['DATASET_SLUG']}.tif"))
+    dtm_closed_stats = get_raster_stats(str(Path(output_path) / f"DTM_closed_{config['DATASET_SLUG']}.tif"))
+    dsm_closed_stats = get_raster_stats(str(Path(output_path) / f"DSM_closed_{config['DATASET_SLUG']}.tif"))
+    ortho_surface_stats = get_raster_stats(str(Path(output_path) / f"ORTHO_SURFACE_{config['DATASET_SLUG']}.tif"))
+    chm_stats = get_raster_stats(str(Path(output_path) / f"CHM_{config['DATASET_SLUG']}.tif"))
     ortho_stats = get_raster_stats(ortho_tif)
 
     total_runtime = latest_metric(metrics_rows, "PIPELINE", "total_runtime")
@@ -306,7 +306,8 @@ def generate() -> int:
     step_05 = latest_metric(metrics_rows, "PIPELINE", "step_05_export_dense_runtime")
     step_06 = latest_metric(metrics_rows, "PIPELINE", "step_06_dem_runtime")
     step_07 = latest_metric(metrics_rows, "PIPELINE", "step_07_orthomosaic_runtime")
-    step_08 = latest_metric(metrics_rows, "PIPELINE", "step_08_report_runtime")
+    step_08 = latest_metric(metrics_rows, "PIPELINE", "step_08_contours_runtime")
+    step_09 = latest_metric(metrics_rows, "PIPELINE", "step_09_report_runtime")
 
     m01_time = latest_metric_any(metrics_rows, "M01", ["duration", "module_duration"])
     m02_time = latest_metric_any(metrics_rows, "M02", ["duration", "module_duration"])
@@ -315,6 +316,7 @@ def generate() -> int:
     m05_time = latest_metric_any(metrics_rows, "M05", ["duration", "module_duration"])
     m06_time = latest_metric_any(metrics_rows, "M06", ["duration", "module_duration"])
     m07_time = latest_metric_any(metrics_rows, "M07", ["duration", "module_duration"])
+    m08_time = latest_metric_any(metrics_rows, "M08", ["duration", "module_duration"])
 
     report = f"""
 =====================================================
@@ -343,7 +345,7 @@ Dense LAS: {dense_las}
 Modelo ENU: {sparse_dir}
 
 [4. TEMPOS DO PIPELINE]
-Tempo total do pipeline (até o fim do M07): {format_seconds(total_runtime)}
+Tempo total do pipeline (até o fim do M08): {format_seconds(total_runtime)}
 Tempo até falha (se aplicável): {format_seconds(total_runtime_fail)}
 
 [4.1] Tempos por passo do run_pipeline.sh
@@ -356,7 +358,8 @@ PASSO 4  - dense_reconstruction: {format_seconds(step_04)}
 PASSO 5  - export_dense: {format_seconds(step_05)}
 PASSO 6  - dem: {format_seconds(step_06)}
 PASSO 7  - orthomosaic: {format_seconds(step_07)}
-PASSO 8  - report: {format_seconds(step_08)}
+PASSO 8  - contours: {format_seconds(step_08)}
+PASSO 9  - report: {format_seconds(step_09)}
 
 [4.2] Tempos por módulo (METRICS_CSV)
 M01: {format_seconds(m01_time)}
@@ -366,6 +369,7 @@ M04: {format_seconds(m04_time)}
 M05: {format_seconds(m05_time)}
 M06: {format_seconds(m06_time)}
 M07: {format_seconds(m07_time)}
+M08: {format_seconds(m08_time)}
 
 [5. ESTATISTICAS DO LAS EXPORTADO]
 LAS existe: {"SIM" if las_stats.get("exists") else "NAO"}

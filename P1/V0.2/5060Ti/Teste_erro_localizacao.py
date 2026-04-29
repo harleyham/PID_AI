@@ -1,8 +1,8 @@
 from pyproj import Geod
 import json
 
-gps_txt = "/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S/coords_ds2.txt"
-enu_json = "/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S/enu_origin.json"
+gps_txt = "/media/ham1/EXT4/PROJETO_LIGEM_HIBRIDO/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S/coords_ds2.txt"
+enu_json = "/media/ham1/EXT4/PROJETO_LIGEM_HIBRIDO/02_Pipelines_LIGEM/P1_Tradicional/workspace_DS2/L40S/enu_origin.json"
 
 with open(gps_txt, "r", encoding="utf-8") as f:
     first = f.readline().strip().split()

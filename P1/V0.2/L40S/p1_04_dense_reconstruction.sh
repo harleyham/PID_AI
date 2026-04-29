@@ -58,6 +58,9 @@ p1_metric "$MODULE" "fusion_input_type" "photometric" "mode"
 p1_metric "$MODULE" "fusion_num_threads" "$StereoFusion_num_threads" "count"
 p1_metric "$MODULE" "fusion_check_num_images" "$StereoFusion_check_num_images" "count"
 p1_metric "$MODULE" "fusion_min_num_pixels" "$StereoFusion_min_num_pixels" "count"
+p1_metric "$MODULE" "fusion_max_image_size" "$StereoFusion_max_image_size" "pixels"
+p1_metric "$MODULE" "fusion_cache_size" "$StereoFusion_cache_size" "gb"
+p1_metric "$MODULE" "fusion_use_cache" "$StereoFusion_use_cache" "bool"
 
 p1_log_info "$MODULE" "Executando image_undistorter"
 p1_run_cmd "$MODULE" "colmap image_undistorter" "$COLMAP_BIN" image_undistorter \
@@ -86,8 +89,11 @@ p1_run_cmd "$MODULE" "colmap stereo_fusion" "$COLMAP_BIN" stereo_fusion \
     --input_type photometric \
     --output_path "$OUTPUT_PATH/fused_enu.ply" \
     --StereoFusion.num_threads "$StereoFusion_num_threads" \
+    --StereoFusion.max_image_size "$StereoFusion_max_image_size" \
     --StereoFusion.check_num_images "$StereoFusion_check_num_images" \
-    --StereoFusion.min_num_pixels "$StereoFusion_min_num_pixels"
+    --StereoFusion.min_num_pixels "$StereoFusion_min_num_pixels" \
+    --StereoFusion.cache_size "$StereoFusion_cache_size" \
+    --StereoFusion.use_cache "$StereoFusion_use_cache"
 
 p1_assert_file_exists "$MODULE" "$OUTPUT_PATH/fused_enu.ply"
 p1_assert_nonempty_file "$MODULE" "$OUTPUT_PATH/fused_enu.ply"

@@ -97,6 +97,7 @@ run_step "04_dense_reconstruction" "[PASSO 4] Iniciando Densificação (Patch Ma
 run_step "05_export_dense" "[PASSO 5] Exportando nuvem densa ENU para LAS UTM..." "$SCRIPT_DIR/p1_05_export_dense_robusto.sh"
 run_step "06_dem" "[PASSO 6] Gerando DTM / DSM / CHM / superfícies fechadas..." "$SCRIPT_DIR/p1_06_DEM.sh"
 run_step "07_orthomosaic" "[PASSO 7] Gerando ortomosaico..." "$SCRIPT_DIR/p1_07_orthomosaic.sh"
+run_step "08_contours" "[PASSO 8] Gerando curvas de nível..." "$SCRIPT_DIR/p1_08_contours.sh"
 
 PIPELINE_END_TS="$(date +%s)"
 PIPELINE_TOTAL_SECONDS=$(( PIPELINE_END_TS - PIPELINE_START_TS ))
@@ -104,6 +105,6 @@ PIPELINE_TOTAL_HMS="$(format_duration "$PIPELINE_TOTAL_SECONDS")"
 
 write_metric "PIPELINE" "total_runtime" "$PIPELINE_TOTAL_SECONDS" "seconds" "SUCCESS" "hhmmss=$PIPELINE_TOTAL_HMS"
 
-run_step "08_report" "[PASSO 8] Gerando Relatório Dinâmico..." python3 "$SCRIPT_DIR/generate_ligem_report.py"
+run_step "09_report" "[PASSO 9] Gerando Relatório Dinâmico..." python3 "$SCRIPT_DIR/generate_ligem_report.py"
 
 log_pipeline_footer_success "$PIPELINE_TOTAL_SECONDS" "$PIPELINE_TOTAL_HMS"

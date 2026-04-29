@@ -147,6 +147,7 @@ def main():
     parser.add_argument("--log-file", required=True)
     parser.add_argument("--metrics-csv", required=True)
     parser.add_argument("--dataset", required=True)
+    parser.add_argument("--dataset-slug", required=True)
     parser.add_argument("--gpu", required=True)
     parser.add_argument("--module", required=True)
 
@@ -185,20 +186,21 @@ def main():
     log_file = args.log_file
     metrics_csv = args.metrics_csv
     dataset = args.dataset
+    dataset_slug = args.dataset_slug
     gpu = args.gpu
     module = args.module
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dtm_tif = output_dir / "DTM.tif"
-    dsm_tif = output_dir / "DSM.tif"
-    dtm_closed_tif = output_dir / "DTM_closed.tif"
-    dsm_closed_tif = output_dir / "DSM_closed.tif"
-    ortho_surface_tif = output_dir / "ORTHO_SURFACE.tif"
-    chm_tif = output_dir / "CHM.tif"
-    dtm_hs = output_dir / "DTM_hillshade.tif"
-    dsm_hs = output_dir / "DSM_hillshade.tif"
-    ground_laz = output_dir / "dense_ground.laz"
+    dtm_tif = output_dir / f"DTM_{dataset_slug}.tif"
+    dsm_tif = output_dir / f"DSM_{dataset_slug}.tif"
+    dtm_closed_tif = output_dir / f"DTM_closed_{args.dataset_slug}.tif"
+    dsm_closed_tif = output_dir / f"DSM_closed_{args.dataset_slug}.tif"
+    ortho_surface_tif = output_dir / f"ORTHO_SURFACE_{args.dataset_slug}.tif"
+    chm_tif = output_dir / f"CHM_{args.dataset_slug}.tif"
+    dtm_hs = output_dir / f"DTM_hillshade_{args.dataset_slug}.tif"
+    dsm_hs = output_dir / f"DSM_hillshade_{args.dataset_slug}.tif"
+    ground_laz = output_dir / f"dense_ground_{args.dataset_slug}.laz"
 
     dense_prefiltered_laz = output_dir / "dense_prefiltered.laz"
 

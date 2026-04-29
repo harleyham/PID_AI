@@ -5,6 +5,8 @@ __pycache__/
 
 .vscode/
 .idea/
+.codex
+.codex/
 
 .sync.ffs_db
 
@@ -32,3 +34,5 @@ Produtos_Raster/
 
 tmp/
 *.tmp
+
+P2/L40S/lib_container/

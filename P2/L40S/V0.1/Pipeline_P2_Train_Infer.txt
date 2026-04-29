@@ -1,0 +1,90 @@
+P2 separado em pipelines versionados
+
+Objetivo
+- Separar o fluxo de treinamento do fluxo de inferencia/producao.
+- Versionar independentemente o pipeline de treino, o pipeline de inferencia e o modelo treinado.
+
+Variaveis principais
+- P2_PIPELINE_KIND: train ou infer.
+- P2_TRAIN_VERSION: versao do fluxo de treinamento.
+- P2_INFER_VERSION: versao do fluxo de inferencia/producao.
+- P2_PIPELINE_VERSION: derivada automaticamente de P2_PIPELINE_KIND.
+- P2_MODEL_VERSION: versao do modelo SegFormer treinado; definida diretamente no p2_config.sh.
+
+Runners
+- run_train_pipeline.sh
+  - define P2_PIPELINE_KIND=train.
+  - executa M01, M02, M03 e M04.
+  - usa GROUND_TAO_SUBCOMMAND=train por padrao.
+  - grava resultados do TAO em MODEL_REGISTRY_ROOT.
+
+- run_infer_pipeline.sh
+  - define P2_PIPELINE_KIND=infer.
+  - executa M01, M02, M03, M04, M05 e M08 por padrao.
+  - usa GROUND_TAO_SUBCOMMAND=inference por padrao.
+  - grava workspace/logs/resultados na versao de inferencia.
+
+Estrutura de artefatos
+- Raiz unica:
+  PROJECT_ROOT=/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO
+  Todos os dados, fotos originais, nuvens, tiles, modelos, resultados e scripts operacionais ficam abaixo de PROJECT_ROOT.
+
+- Base comum:
+  DATA_HOST_BASE=$PROJECT_ROOT/02_Pipelines_LIGEM/$PIPELINE_NAME
+  TAO_DATA_HOST=$DATA_HOST_BASE
+  O container monta TAO_DATA_HOST em /data para enxergar train/, infer/ e models/.
+
+- Treinamento:
+  DATA_HOST=$DATA_HOST_BASE/train/$P2_TRAIN_VERSION
+  WORKSPACE=$DATA_HOST/workspace_<dataset>/<gpu>
+  MODEL_REGISTRY_ROOT=$DATA_HOST_BASE/models/$GROUND_MODEL_NAME/$P2_MODEL_VERSION
+  GROUND_TAO_RESULTS_DIR=$MODEL_REGISTRY_ROOT/tao_runs
+
+- Inferencia:
+  DATA_HOST=$DATA_HOST_BASE/infer/$P2_INFER_VERSION
+  WORKSPACE=$DATA_HOST/workspace_<dataset>/<gpu>
+  RESULTS_HOST=$DATA_HOST/results
+  GROUND_TAO_RESULTS_DIR=$RESULTS_HOST/<dataset_slug>/<gpu>/tao_runs/segformer
+
+Fluxo de treinamento
+P2_INPUT_POINT_CLOUD
+  -> M01_INGEST
+  -> M02_DIAGNOSTICO
+  -> M03_PREPROCESS_DATASET
+     - rasteriza a nuvem densa em tiles.
+     - gera imagens e pseudo-mascaras iniciais.
+     - gera metadata train/val/test.
+  -> M04_GROUND_AI train
+     - fine-tuning SegFormer via TAO.
+     - resultados gravados em MODEL_REGISTRY_ROOT.
+
+Fluxo de inferencia/producao
+P2_INPUT_POINT_CLOUD
+  -> M01_INGEST
+  -> M02_DIAGNOSTICO
+  -> M03_PREPROCESS_DATASET
+     - rasteriza a nuvem nova com o mesmo contrato espacial do treino.
+  -> M04_GROUND_AI inference
+     - usa modelo versionado por P2_MODEL_VERSION.
+  -> M05_DTM_FILTER
+     - contrato para projetar mascaras previstas e gerar DTM/DSM.
+  -> M06_REFINE_DTM opcional.
+  -> M07_CONTOURS opcional.
+  -> M08_QUALITY
+
+Uso
+- Treinar modelo com as versoes definidas em p2_config.sh:
+  ./run_train_pipeline.sh
+
+- Rodar inferencia usando o modelo definido em p2_config.sh:
+  ./run_infer_pipeline.sh
+
+- Para trocar versao de treino, inferencia ou modelo:
+  edite P2_TRAIN_VERSION, P2_INFER_VERSION ou P2_MODEL_VERSION em p2_config.sh antes de executar o runner.
+
+Observacoes
+- O runner base run_pipeline.sh permanece compartilhado para evitar duplicacao de logica.
+- O Docker Compose monta TAO_DATA_HOST em /data, SCRIPTS_HOST em /scripts e RESULTS_HOST em /results.
+- O codigo operacional fica em $PROJECT_ROOT/03_Scripts_Common/P2/L40S/V0.1, definido por P2_CODE_DIR.
+- A rasterizacao do M03 continua comum aos dois fluxos; isso preserva compatibilidade entre treino e inferencia.
+- O M05 ainda e contrato/stub para filtragem semantica real e geracao efetiva de DTM/DSM.

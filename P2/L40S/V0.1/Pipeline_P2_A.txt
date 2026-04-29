@@ -1,0 +1,457 @@
+Diagrama
+P2_INPUT_POINT_CLOUD (.las/.laz)
+        |
+        v
+[M01_INGEST]
+Ingestao e normalizacao
+- valida existencia da nuvem
+- registra manifesto de ingestao
+- nao materializa copia/normalizacao nesta versao
+        |
+        v
+[M02_DIAGNOSTICO]
+Diagnostico da nuvem
+- coleta metadados do arquivo
+- se LAS/LAZ, tenta resumir pontos, bbox, estatisticas Z e classes
+- gera relatorio JSON
+        |
+        v
+[M03_PREPROCESS_DATASET]
+Preparacao do dataset 2D para segmentacao semantica
+- rasteriza a nuvem densa em tiles 2D
+- gera imagens RGB ou multibanda por tile
+- descarta tiles residuais cuja area util fique abaixo do percentual minimo configurado em PREPROCESS_MIN_TILE_AREA_PERCENT
+- gera mascaras de treino, validacao, teste ou pseudo-labels
+- organiza estrutura train/val/test para SegFormer
+- registra manifesto do dataset
+        |
+        v
+[M04_GROUND_AI]
+Treino ou inferencia com SegFormer via NVIDIA TAO Toolkit
+- executa o binario do modelo no container Docker Compose
+- modo default_specs: gera spec padrao no workspace da GPU
+- modo train/evaluate/inference: usa spec YAML e dataset do M03
+- produz logs, checkpoints, metricas e mascaras previstas por tile
+        |
+        v
+[M05_DTM_FILTER]
+Filtragem semantica do solo e geracao de DTM/DSM
+- usa as mascaras previstas do M04 para identificar classe solo
+- projeta a mascara 2D de volta para a grade ou para a nuvem densa
+- separa pontos de solo de vegetacao/edificacao
+- gera nuvem filtrada de solo, DTM, DSM, mascara de vazios e confianca
+        |
+        v
+[M06_REFINE_DTM]
+Refinamento do DTM
+- registra parametros de refinamento
+- fechamento de vazios, suavizacao, preservacao de breaklines
+- gera DTM refinado a partir do DTM bruto
+        |
+        v
+[M07_CONTOURS]
+Geracao de curvas de nivel
+- escolhe raster fonte: DTM_RAW, DTM_REFINED ou DSM
+- modo stub: so gera manifesto
+- modo live: executa gdal_contour e gera vetor de curvas
+- em GPKG/live, conta numero de feicoes
+        |
+        v
+[M08_QUALITY]
+Consolidacao de qualidade
+- le diagnostico + manifestos de DTM/refino/curvas
+- verifica presenca de entradas e artefatos
+- produz relatorio final de prontidao
+
+Artefatos principais
+Entrada principal:
+- P2_INPUT_POINT_CLOUD
+
+Saidas de relatorio/manifesto:
+- m01_ingest.json
+- diagnostic_<dataset>.json
+- m03_preprocess.json
+- m04_ground_ai.json
+- m05_dtm.json
+- m06_refine_dtm.json
+- m07_contours.json
+- quality_<dataset>.json
+
+Saidas estruturais do fluxo com IA:
+- tiles/segformer_<dataset>/images/train
+- tiles/segformer_<dataset>/images/val
+- tiles/segformer_<dataset>/images/test
+- tiles/segformer_<dataset>/masks/train
+- tiles/segformer_<dataset>/masks/val
+- tiles/segformer_<dataset>/masks/test
+- tiles/segformer_<dataset>/metadata/tile_index.geojson
+- tao_runs/segformer/experiment.yaml
+- tao_runs/segformer/checkpoints/
+- tao_runs/segformer/predictions/
+- classified/dense_cloud_ground_ready.laz
+
+Leitura pratica
+Nuvem de pontos
+  -> diagnostico
+  -> rasterizacao em tiles 2D para IA
+  -> treino ou inferencia com SegFormer
+  -> retorno da mascara prevista para o dominio da nuvem
+  -> filtragem de solo
+  -> geracao de DTM/DSM
+  -> refinamento do DTM
+  -> geracao de curvas
+  -> consolidacao final de qualidade
+
+Observacoes de arquitetura
+- O SegFormer nao opera diretamente na nuvem .las/.laz; ele opera sobre imagens 2D rasterizadas a partir da nuvem densa.
+- As imagens originais do drone sao necessarias para gerar a nuvem densa no P0/P1, mas nao sao insumo direto da inferencia do SegFormer no P2.
+- Para treino supervisionado, o M03 precisa produzir mascaras de ground truth ou pseudo-labels para as classes semanticas.
+- O M05 e o modulo responsavel por reaplicar a semantica prevista no espaco da nuvem ou da grade para filtrar a classe solo.
+
+Hoje, o fluxo implementado parcialmente e o fluxo-alvo sao:
+- M01 faz validacao e manifesto de ingestao
+- M02 faz diagnostico real da nuvem
+- M03 ainda precisa evoluir de contrato para dataset 2D real
+- M04 ja integra o container TAO/SegFormer para gerar default_specs e deve evoluir para train/evaluate/inference
+- M05 ainda precisa evoluir de contrato para filtragem semantica real e geracao de DTM/DSM
+- M06 permanece como etapa de refinamento do DTM
+- M07 pode gerar curvas reais no modo live
+- M08 consolida as verificacoes finais
+
+## Modulos do pipeline P2
++----------------------+-------------------------------------------------------------+--------------------------------------------------------------------------------------+----------------------------------------------+
+| Modulo               | Entrada                                                     | Saida                                                                                | Status atual                                 |
++----------------------+-------------------------------------------------------------+--------------------------------------------------------------------------------------+----------------------------------------------+
+| M01_INGEST           | P2_INPUT_POINT_CLOUD, normalize_mode                        | m01_ingest.json, referencia para normalized_point_cloud                              | stub                                         |
+| M02_DIAGNOSTICO      | nuvem de pontos .las/.laz                                   | diagnostic_<dataset>.json com metadados e estatisticas da nuvem                      | parcialmente real                            |
+| M03_PREPROCESS_DATASET| nuvem de pontos, parametros de rasterizacao e classes      | dataset 2D de tiles/mascaras + m03_preprocess.json                                   | contrato hoje, alvo real                     |
+| M04_GROUND_AI        | dataset 2D do M03, spec YAML, GPU, batch_size, device       | m04_ground_ai.json, logs, checkpoints, predictions/, experiment.yaml                 | default_specs real, treino/inferencia alvo   |
+| M05_DTM_FILTER       | nuvem densa original + predictions do M04                   | nuvem filtrada de solo, m05_dtm.json, DTM, DSM, void_mask, confidence                | contrato hoje, alvo real                     |
+| M06_REFINE_DTM       | DTM_RAW, fill_distance, smoothing_passes,                   | m06_refine_dtm.json, DTM_REFINED                                                     | stub/planejamento                            |
+|                      | preserve_breaklines                                         |                                                                                      |                                              |
+| M07_CONTOURS         | raster de entrada (DTM_RAW, DTM_REFINED ou DSM)             | vetor de curvas, normalmente .gpkg, e m07_contours.json                              | real em live, stub em stub                   |
+| M08_QUALITY          | relatorio de diagnostico + manifestos M05, M06, M07         | relatorio final quality_<dataset>.json                                               | real                                         |
++----------------------+-------------------------------------------------------------+--------------------------------------------------------------------------------------+----------------------------------------------+
+
+Legenda:
+- stub: so registra contrato/manifesto; nao materializa o produto final.
+- parcialmente real: executa parte util de verdade, mas com etapas-alvo ainda faltando.
+- contrato hoje, alvo real: define o papel e os artefatos esperados, mas a implementacao completa ainda esta em construcao.
+- real: executa a etapa e gera a saida esperada.
+
+Parametros relevantes do M03:
+- TILE_SIZE_METERS: tamanho nominal do tile em metros.
+- TILE_OVERLAP_METERS: sobreposicao entre tiles consecutivos.
+- PREPROCESS_VOXEL_SIZE_METERS: resolucao espacial usada na rasterizacao RGB.
+- PREPROCESS_MIN_TILE_AREA_PERCENT: percentual minimo de area util aceito para materializar um tile residual; tiles menores sao descartados.
+
+
+Situação atual do P2
+Hoje o pipeline está misto: parte é contrato/manifesto, parte já executa processamento real.
+M01_INGEST
+Arquivo: p2_01_ingest.py
+Implementa de fato:
+- valida se a nuvem de entrada existe
+- grava m01_ingest.json
+Não implementa ainda:
+- cópia da nuvem
+- normalização física
+- conversão de formato
+Estado real:
+- stub com validação de entrada
+M02_DIAGNOSTICO
+Arquivo: p2_02_diagnostico.py
+Implementa de fato:
+- valida existência do arquivo
+- coleta path, size, suffix
+- se for .las/.laz, tenta ler com laspy
+- extrai:
+  - número de pontos
+  - bbox
+  - estatísticas de Z
+  - classes ASPRS
+  - presença de RGB/intensidade
+- grava diagnostic_<dataset>.json
+Limitação:
+- se a leitura falhar, cai em fallback
+Estado real:
+- funcional e útil
+- é um dos módulos mais reais do pipeline hoje
+M03_PREPROCESS_DATASET
+Arquivo: p2_03_preprocess.py
+Implementa de fato:
+- valida se a nuvem existe
+- grava manifesto m03_preprocess.json
+- já descreve a estrutura-alvo do dataset 2D:
+  - images/train|val|test
+  - masks/train|val|test
+  - metadata
+Não implementa ainda:
+- rasterização da nuvem
+- geração de tiles
+- geração de máscaras
+- splits reais
+Estado real:
+- contrato bem definido
+- sem materialização do dataset
+M04_GROUND_AI
+Arquivo: p2_04_ground_ai.py
+Implementa de fato:
+- valida entrada e arquivo docker-compose
+- converte caminhos host -> container
+- chama docker compose ... tao-p2 bash -lc 'segformer ...'
+- registra no manifesto:
+  - compose usado
+  - spec usado
+  - comando executado
+  - results_dir
+  - predictions_dir
+  - checkpoints_dir
+  - experiment.yaml gerado
+- em live, já executa o binário segformer no container
+O que já foi validado:
+- default_specs funciona
+- grava experiment.yaml no workspace separado por GPU
+- funciona em RTX5060Ti e L40S
+Não implementa ainda:
+- treino real com dataset preparado
+- inferência útil sobre tiles do M03
+- retorno da máscara para a nuvem
+- geração da nuvem classificada 3D final
+Estado real:
+- integração TAO/SegFormer já funcional
+- processamento semântico ainda parcial
+M05_DTM_FILTER
+Arquivo: p2_05_dtm.py
+Implementa de fato:
+- grava manifesto m05_dtm.json
+- descreve saídas contratuais:
+  - filtered_ground_point_cloud
+  - DTM
+  - DSM
+  - void_mask
+  - confidence
+Não implementa ainda:
+- leitura de máscaras previstas do M04
+- filtragem semântica do solo
+- projeção máscara 2D -> nuvem
+- geração real de DTM/DSM
+Estado real:
+- contrato atualizado
+- sem processamento real
+M06_REFINE_DTM
+Arquivo: p2_06_refine_dtm.py
+Implementa de fato:
+- grava manifesto m06_refine_dtm.json
+- registra parâmetros de refino
+Não implementa ainda:
+- fechamento de vazios
+- suavização
+- preservação de breaklines
+- escrita de DTM refinado
+Estado real:
+- stub
+M07_CONTOURS
+Arquivos: p2_07_contours.sh, p2_07_contours_stat.py
+Implementa de fato:
+- escolhe raster fonte: DTM_RAW, DTM_REFINED ou DSM
+- em stub:
+  - gera só o manifesto
+- em live:
+  - valida raster de entrada
+  - roda gdal_contour
+  - valida arquivo gerado
+  - grava manifesto
+  - se for GPKG, conta feições via SQLite
+Estado real:
+- real no modo live
+- é o módulo mais completo junto com M02
+M08_QUALITY
+Arquivo: p2_08_quality.py
+Implementa de fato:
+- lê:
+  - diagnóstico
+  - manifesto do DTM
+  - manifesto de refino
+  - manifesto de curvas
+- verifica presença de entradas
+- consolida estado de artefatos
+- calcula:
+  - missing_inputs
+  - missing_artifacts
+  - ready_for_live_run
+- grava quality_<dataset>.json
+Limitação:
+- depende da qualidade dos manifestos anteriores
+- hoje valida mais presença/estado do que qualidade geométrica real
+Estado real:
+- funcional
+- consolidador real de rastreabilidade
+Resumo objetivo
+Já implementa processamento real:
+- M02_DIAGNOSTICO
+- M07_CONTOURS em live
+- M08_QUALITY
+- M04_GROUND_AI parcialmente: integração real com TAO/SegFormer para default_specs
+Implementa principalmente contrato/manifests:
+- M01_INGEST
+- M03_PREPROCESS_DATASET
+- M05_DTM_FILTER
+- M06_REFINE_DTM
+Leitura prática
+O P2 hoje já consegue:
+- validar e diagnosticar a nuvem
+- integrar TAO/SegFormer no container
+- gerar curvas reais se já houver raster válido
+- consolidar um relatório final
+O que ainda falta para o fluxo-alvo completo:
+- M03 gerar dataset 2D real
+- M04 treinar/inferir de verdade sobre esse dataset
+- M05 transformar a máscara prevista em filtragem real de solo
+
+
+Tabela implementado x pendente por módulo.
+Modulo	Implementado hoje	Pendente
+M01_INGEST	valida existência da nuvem; grava m01_ingest.json; registra contrato de normalized_point_cloud	cópia física; normalização real; conversão de formato; materialização de saída
+M02_DIAGNOSTICO	valida arquivo; lê .las/.laz; extrai metadados, bbox, estatísticas de Z, classes, presença de RGB/intensidade; grava diagnostic_<dataset>.json	ampliar diagnóstico para outras entradas; reduzir dependência de fallback; métricas mais avançadas de qualidade
+M03_PREPROCESS_DATASET	valida entrada; grava m03_preprocess.json; descreve estrutura-alvo de dataset 2D (images/, masks/, metadata/)	rasterização da nuvem; geração de tiles; geração de máscaras; splits train/val/test; materialização do dataset
+M04_GROUND_AI	integra docker compose + container TAO; executa segformer; gera default_specs; grava manifesto com comando, spec, results_dir, predictions_dir, checkpoints_dir	treino real; inferência real sobre tiles do M03; checkpoints úteis; máscaras previstas por tile; geração da nuvem classificada 3D
+M05_DTM_FILTER	grava m05_dtm.json; define contrato para filtered_ground_point_cloud, DTM, DSM, void_mask, confidence	ler predições do M04; projetar máscara 2D de volta para nuvem/grade; filtrar solo; gerar DTM/DSM reais
+M06_REFINE_DTM	grava m06_refine_dtm.json; registra parâmetros de refinamento	fechamento de vazios; suavização; preservação de breaklines; geração real do DTM refinado
+M07_CONTOURS	em stub, gera manifesto; em live, escolhe raster, roda gdal_contour, valida saída, conta feições em GPKG, grava m07_contours.json	depende de DTM/DSM reais anteriores; ampliar estatísticas/QA vetorial se necessário
+M08_QUALITY	lê diagnóstico e manifestos; verifica presença de entradas/artefatos; calcula missing_inputs, missing_artifacts, ready_for_live_run; grava quality_<dataset>.json	validações geométricas/semânticas mais profundas; QA quantitativo do produto final
+Resumo
+- Mais implementados: M02, M07, M08
+- Parcialmente implementado e já conectado ao stack NVIDIA: M04
+- Ainda em modo contrato: M01, M03, M05, M06
+
+Contexto da sessao atual - foco no modo treinamento
+
+Objetivo atual
+- Finalizar primeiro o pipeline no modo de treinamento da rede SegFormer via NVIDIA TAO.
+- Garantir que o treinamento use uma massa de dados correta: pares imagem/maskara com rotulos supervisionados quando disponiveis.
+- Deixar a classificacao operacional de nuvens densas para a etapa seguinte, apos o treino estar correto.
+
+Perguntas tratadas
+- Como criar tiles e mascaras?
+- Como classificar?
+- O que e a massa de dados para treinamento?
+
+Resposta tecnica consolidada
+- Para o TAO/SegFormer, a massa de dados de treino nao e apenas a nuvem bruta .las/.laz.
+- A massa de dados e um dataset 2D semanticamente rotulado, composto por pares imagem + mascara:
+  - images/train/*.png
+  - images/val/*.png
+  - images/test/*.png
+  - masks/train/*.png
+  - masks/val/*.png
+  - masks/test/*.png
+  - metadata/dataset_manifest.json
+  - metadata/classes.json
+- Cada imagem e um tile RGB rasterizado da nuvem.
+- Cada mascara e o alvo supervisionado por pixel para o SegFormer.
+- Para treino correto, a mascara deve vir preferencialmente de uma nuvem LAS/LAZ previamente classificada, usando a dimensao Classification.
+- Pseudo-mascaras continuam uteis apenas para bootstrap, teste de pipeline ou pre-rotulagem, mas nao devem ser tratadas como ground truth final sem revisao.
+
+Mudancas implementadas nesta sessao
+- M03_PREPROCESS_DATASET deixou de depender apenas de pseudo-mascaras.
+- p2_03_preprocess.py agora exporta tambem a dimensao Classification via PDAL:
+  - X,Y,Z,Red,Green,Blue,Classification
+- p2_03_preprocess.py passou a aceitar:
+  - --label-source auto|classification|pseudo
+  - --asprs-ground-classes
+  - --asprs-vegetation-classes
+  - --asprs-building-classes
+  - --min-labeled-point-percent
+- p2_config.sh passou a expor as variaveis:
+  - PREPROCESS_LABEL_SOURCE
+  - PREPROCESS_ASPRS_GROUND_CLASSES
+  - PREPROCESS_ASPRS_VEGETATION_CLASSES
+  - PREPROCESS_ASPRS_BUILDING_CLASSES
+  - PREPROCESS_MIN_LABELED_POINT_PERCENT
+- run_pipeline.sh passou esses parametros para o M03.
+- run_train_pipeline.sh define por padrao:
+  - PREPROCESS_LABEL_SOURCE=classification
+
+Mapeamento semantico padrao para treino
+- Classe semantica ground: ASPRS 2
+- Classe semantica vegetation: ASPRS 3,4,5
+- Classe semantica building: ASPRS 6
+- Pontos ocupados sem classe mapeada: background
+- Pixels sem ponto: nodata
+
+Comportamento esperado no modo train
+- ./run_train_pipeline.sh executa M01, M02, M03 e M04.
+- M03 tenta criar mascaras supervisionadas a partir da classificacao LAS/LAZ.
+- Se PREPROCESS_LABEL_SOURCE=classification e nenhuma classe ASPRS mapeada for encontrada, o M03 deve falhar em vez de treinar silenciosamente com rotulos ruins.
+- Isso protege o treino contra modelos gerados a partir de pseudo-labels sem controle.
+
+Conceito de classificacao nesta fase
+- No treino, classificar significa produzir a mascara alvo por pixel usada como ground truth.
+- Exemplo:
+  - ground -> label_id 0
+  - vegetation -> label_id 1
+  - building -> label_id 2
+  - background -> label_id 3
+  - nodata -> 255
+- A rede aprende a transformar o tile RGB nessa mascara semantica.
+
+Pendencias apos o treino estar correto
+- Implementar M04 em modo inference usando checkpoint treinado versionado em MODEL_REGISTRY_ROOT.
+- Definir estrategia de checkpoint ativo para P2_MODEL_VERSION.
+- Gerar predictions/ padronizado para tiles de inferencia.
+- Implementar M05 real para projetar mascaras 2D previstas de volta para a nuvem densa.
+- Gerar CLASSIFIED_POINT_CLOUD real.
+- Gerar DTM/DSM reais a partir da classe ground.
+
+Validacoes feitas nesta sessao
+- python3 -m py_compile p2_03_preprocess.py
+- bash -n run_pipeline.sh
+- bash -n run_train_pipeline.sh
+- bash -n p2_config.sh
+
+Observacao operacional
+- O treino completo com TAO nao foi executado nesta sessao.
+- A proxima validacao pratica deve ser rodar ./run_train_pipeline.sh com uma nuvem LAS/LAZ que possua Classification confiavel.
+
+Atualizacao de classes semanticas - pavimento e agua
+
+Decisao de dataset
+- A evolucao adotada para o dataset de segmentacao semantica e:
+  - 0 ground
+  - 1 vegetation
+  - 2 building
+  - 3 paved_surface
+  - 4 water
+  - 5 background
+  - 255 nodata
+
+Motivacao
+- Asfalto/pavimento nao deve ser misturado obrigatoriamente com solo natural.
+- Agua nao deve contaminar ground nem DTM, pois representa superficie hidrica e nao terreno confiavel.
+- Separar paved_surface e water melhora o controle posterior do M05 para decidir o que entra ou nao na geracao de DTM/DSM.
+
+Mapeamento ASPRS padrao configurado
+- ground: 2
+- vegetation: 3,4,5
+- building: 6
+- paved_surface: 11
+- water: 9
+- background: pontos ocupados sem classe ASPRS mapeada
+- nodata: pixels sem pontos
+
+Mudancas implementadas
+- p2_03_preprocess.py passou a gerar classes 0,1,2,3,4,5,255.
+- p2_03_preprocess.py passou a aceitar:
+  - --asprs-paved-surface-classes
+  - --asprs-water-classes
+- p2_config.sh passou a expor:
+  - PREPROCESS_ASPRS_PAVED_SURFACE_CLASSES
+  - PREPROCESS_ASPRS_WATER_CLASSES
+- run_pipeline.sh passa esses novos parametros para o M03.
+- p2_04_ground_ai.py recalcula train.segment.weights conforme o numero de classes do classes.json, evitando manter pesos antigos de 4 classes quando o dataset tiver 6 classes.
+
+Observacao
+- O mapeamento de paved_surface para ASPRS 11 so sera efetivo se a nuvem de treino ja vier classificada com essa classe.
+- Se o LAS/LAZ nao diferenciar asfalto de ground, o pipeline nao consegue inventar ground truth supervisionado confiavel para pavimento sem rotulagem adicional.
+

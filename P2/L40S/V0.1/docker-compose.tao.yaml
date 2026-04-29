@@ -1,0 +1,32 @@
+services:
+  tao-p2:
+    image: ${TAO_IMAGE:-nvcr.io/nvidia/tao/tao-toolkit:6.26.3-pyt}
+    container_name: tao-p2
+    working_dir: /scripts/V0.1
+    stdin_open: true
+    tty: true
+    shm_size: "16gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      DATA_ROOT: /data
+      SCRIPTS_ROOT: /scripts
+      RESULTS_ROOT: /results
+      PIPELINE_NAME: ${PIPELINE_NAME:-P2_Hibrido_Post_IA}
+      DATASET: ${DATASET:-Dataset_03}
+      GPU: ${GPU:-RTX5060Ti}
+      P2_ENV: ${P2_ENV:-unknown}
+      P2_EXECUTION_MODE: ${P2_EXECUTION_MODE:-live}
+    volumes:
+      - ${TAO_DATA_HOST}:/data
+      - ${SCRIPTS_HOST}:/scripts
+      - ${RESULTS_HOST}:/results
+      - /home/ham/.cache:/home/tao/.cache
+    command: bash

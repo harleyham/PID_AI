@@ -34,15 +34,15 @@ p1_module_start "$MODULE" START_TS
 : "${LAS_OUTPUT:=$OUTPUT_PATH/dense_utm_color.las}"
 : "${OUTPUT_PATH:=$OUTPUT_DIR}"
 
-: "${DTM_TIF:=$OUTPUT_PATH/DTM.tif}"
-: "${DSM_TIF:=$OUTPUT_PATH/DSM.tif}"
-: "${DTM_CLOSED_TIF:=$OUTPUT_PATH/DTM_closed.tif}"
-: "${DSM_CLOSED_TIF:=$OUTPUT_PATH/DSM_closed.tif}"
-: "${ORTHO_SURFACE_TIF:=$OUTPUT_PATH/ORTHO_SURFACE.tif}"
-: "${CHM_TIF:=$OUTPUT_PATH/CHM.tif}"
-: "${DTM_HILLSHADE_TIF:=$OUTPUT_PATH/DTM_hillshade.tif}"
-: "${DSM_HILLSHADE_TIF:=$OUTPUT_PATH/DSM_hillshade.tif}"
-: "${DENSE_GROUND_LAZ:=$OUTPUT_PATH/dense_ground.laz}"
+: "${DTM_TIF:=$OUTPUT_PATH/DTM_${DATASET_SLUG}.tif}"
+: "${DSM_TIF:=$OUTPUT_PATH/DSM_${DATASET_SLUG}.tif}"
+: "${DTM_CLOSED_TIF:=$OUTPUT_PATH/DTM_closed_${DATASET_SLUG}.tif}"
+: "${DSM_CLOSED_TIF:=$OUTPUT_PATH/DSM_closed_${DATASET_SLUG}.tif}"
+: "${ORTHO_SURFACE_TIF:=$OUTPUT_PATH/ORTHO_SURFACE_${DATASET_SLUG}.tif}"
+: "${CHM_TIF:=$OUTPUT_PATH/CHM_${DATASET_SLUG}.tif}"
+: "${DTM_HILLSHADE_TIF:=$OUTPUT_PATH/DTM_hillshade_${DATASET_SLUG}.tif}"
+: "${DSM_HILLSHADE_TIF:=$OUTPUT_PATH/DSM_hillshade_${DATASET_SLUG}.tif}"
+: "${DENSE_GROUND_LAZ:=$OUTPUT_PATH/dense_ground_${DATASET_SLUG}.laz}"
 
 mkdir -p "$OUTPUT_PATH"
 
@@ -122,6 +122,7 @@ PY_CMD=(
     --log-file "$PIPELINE_LOG"
     --metrics-csv "$METRICS_CSV"
     --dataset "$DATASET"
+    --dataset-slug "$DATASET_SLUG"
     --gpu "$GPU"
     --module "$MODULE"
 )

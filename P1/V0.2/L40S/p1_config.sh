@@ -18,7 +18,7 @@ set -euo pipefail
 export PROJECT_ROOT="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO"
 export PIPELINE_NAME="P1_Tradicional"
 
-export DATASET="Dataset_02"
+export DATASET="Dataset_04"
 export GPU="L40S"
 
 
@@ -41,7 +41,20 @@ export PIPELINE_SCALE_MODE="auto"
 # Use somente se PIPELINE_SCALE_MODE="manual"
 export PIPELINE_PROFILE_NAME="medium_mid"
 
-export StereoFusion_num_threads="24"
+
+# ------------------------------------------------------------
+# Módulo 04 - limites da stereo_fusion
+# ------------------------------------------------------------
+export StereoFusion_num_threads="24"  # 24 na L40S, -1 para outros
+
+# Limites para reduzir pico de RAM no stereo_fusion
+export StereoFusion_cache_size="32"
+export StereoFusion_use_cache="1"
+export StereoFusion_max_image_size="2200"
+
+# Já existentes / manter explícitos
+export StereoFusion_check_num_images="2"
+export StereoFusion_min_num_pixels="4"
 
 # ------------------------------------------------------------
 # Seleção automática do par inicial do M03
@@ -60,7 +73,7 @@ export MAPPER_INIT_MIN_NUM_INLIERS="80"
 export MAPPER_ABS_POSE_MIN_NUM_INLIERS="30"
 export MAPPER_ABS_POSE_MIN_INLIER_RATIO="0.20"
 export MAPPER_FILTER_MAX_REPROJ_ERROR="3"
-export MAPPER_NUM_THREADS="24"
+export MAPPER_NUM_THREADS="8" # Era 24
 
 # Alinhamento
 export ALIGNMENT_MAX_ERROR="10"
@@ -324,9 +337,47 @@ export ORTHO_BLEND_MODE="best_angle"
 export ORTHO_COMPRESS="DEFLATE"
 export ORTHO_JPEG_QUALITY="90"
 
-export ORTHO_TIF="$OUTPUT_PATH/ORTHO.tif"
-export ORTHO_VRT="$OUTPUT_PATH/ORTHO.vrt"
-export ORTHO_PREVIEW_JPG="$OUTPUT_PATH/ORTHO_preview.jpg"
+export ORTHO_TIF="$OUTPUT_PATH/ORTHO_${DATASET_SLUG}.tif"
+export ORTHO_VRT="$OUTPUT_PATH/ORTHO_${DATASET_SLUG}.vrt"
+export ORTHO_PREVIEW_JPG="$OUTPUT_PATH/ORTHO_preview_${DATASET_SLUG}.jpg"
+
+
+# ------------------------------------------------------------
+# Módulo 08 - Curvas de nível
+# Base padrão: DTM_closed, por ser mais adequada para terreno.
+# ------------------------------------------------------------
+export CONTOUR_ENABLED="1"
+
+# Opções:
+# DTM | DSM | DTM_CLOSED | DSM_CLOSED | ORTHO_SURFACE
+export CONTOUR_INPUT_MODE="DTM_CLOSED"
+
+# Equidistância vertical das curvas
+export CONTOUR_INTERVAL="1.0"
+
+# Cota base das curvas
+export CONTOUR_BASE="0.0"
+
+# Campo de atributo com a elevação
+export CONTOUR_FIELD_NAME="elev"
+
+# Formato de saída preferencial
+export CONTOUR_FORMAT="GPKG"
+
+# Nome da camada dentro do GPKG
+export CONTOUR_LAYER_NAME="contours_1m"
+
+# Caminho da saída
+export CONTOUR_OUTPUT="$OUTPUT_PATH/contours_1m_${DATASET_SLUG}.gpkg"
+
+# Banda do raster usada pelo gdal_contour
+export CONTOUR_BAND="1"
+
+# Ignorar pixels nodata do raster
+export CONTOUR_IGNORE_NODATA="1"
+
+# 0 = curvas 2D; 1 = LineString Z
+export CONTOUR_3D="0"
 
 # ------------------------------------------------------------
 # Utilitários

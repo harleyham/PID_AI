@@ -1,7 +1,7 @@
 #!/bin/bash
 # Script para validar coordenadas em arquivos PLY binários
 
-PROJECT_ROOT="/media/ham/EXT4/PROJETO_LIGEM_HIBRIDO"
+PROJECT_ROOT="/media/ham1/EXT4/PROJETO_LIGEM_HIBRIDO"
 DENSE_PLY="$PROJECT_ROOT/04_Produtos_Finais/DS2/fused.ply"
 
 if [ ! -f "$DENSE_PLY" ]; then

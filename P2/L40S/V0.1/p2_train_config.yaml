@@ -1,0 +1,22 @@
+dataset_config:
+  train_images_path: "/data/dataset_ia/train/images"
+  train_masks_path: "/data/dataset_ia/train/masks"
+  val_images_path: "/data/dataset_ia/train/images"
+  val_masks_path: "/data/dataset_ia/train/masks"
+  num_classes: 2
+  img_norm_cfg:
+    mean: [123.675, 116.28, 103.53]
+    std: [58.395, 57.12, 57.375]
+
+model_config:
+  architecture: "segformer"
+  backbone: "mit_b0"
+  input_shape: [3, 512, 512]
+
+train_config:
+  batch_size: 4
+  epochs: 10
+  optimizer:
+    type: "AdamW"
+    lr: 0.00006
+  checkpoint_interval: 5
